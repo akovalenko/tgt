@@ -52,8 +52,20 @@ static void bs_sync_sync_range(struct scsi_cmd *cmd, uint32_t length,
 			       int *result, uint8_t *key, uint16_t *asc)
 {
 	int ret;
+	uint64_t offset = cmd->offset;
+	uint32_t count = cmd->tl;
 
-	ret = fdatasync(cmd->dev->fd);
+	if (!count) {
+		/* FIXME we assume full device sync for zero-length
+		   SYNCHRONIZE_CACHE, even if it could be "from
+		   non-zero LBA up until the end of device" */
+		ret = fdatasync(cmd->dev->fd);
+	} else {
+		ret = sync_file_range(cmd->dev->fd, offset, count,
+				      SYNC_FILE_RANGE_WRITE|
+				      SYNC_FILE_RANGE_WAIT_BEFORE);
+	}
+
 	if (ret)
 		set_medium_error(result, key, asc);
 }
