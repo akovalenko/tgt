@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <linux/fs.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
@@ -196,6 +197,26 @@ static int bs_aio_submit_all_devs(void)
 	return 0;
 }
 
+static int bs_aio_sync_range(struct scsi_cmd *cmd)
+{
+	int ret;
+	uint64_t offset = cmd->offset;
+	uint32_t count = cmd->tl;
+
+	if (!count) {
+		/* FIXME we assume full device sync for zero-length
+		   SYNCHRONIZE_CACHE, even if it could be "from
+		   non-zero LBA up until the end of device" */
+		ret = fdatasync(cmd->dev->fd);
+	} else {
+		ret = sync_file_range(cmd->dev->fd, offset, count,
+				      SYNC_FILE_RANGE_WRITE| SYNC_FILE_RANGE_WAIT_BEFORE);
+	}
+
+	return ret;
+}
+
+
 static int bs_aio_cmd_submit(struct scsi_cmd *cmd)
 {
 	struct scsi_lu *lu = cmd->dev;
@@ -221,8 +242,8 @@ static int bs_aio_cmd_submit(struct scsi_cmd *cmd)
 	case SYNCHRONIZE_CACHE:
 	case SYNCHRONIZE_CACHE_16:
 	default:
-		dprintf("skipped cmd:%p op:%x\n", cmd, scsi_op);
-		return 0;
+		dprintf("synchronous cmd:%p op:%x\n", cmd, scsi_op);
+		return bs_aio_sync_range(cmd);
 	}
 
 	list_add_tail(&cmd->bs_list, &info->cmd_wait_list);
