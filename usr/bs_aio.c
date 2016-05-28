@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <sys/eventfd.h>
 #include <libaio.h>
+#include <pthread.h>
 
 #include "list.h"
 #include "util.h"
@@ -44,6 +45,7 @@
 #endif
 
 #define AIO_MAX_IODEPTH    128
+
 
 struct bs_aio_info {
 	struct list_head dev_list_entry;
@@ -62,6 +64,15 @@ struct bs_aio_info {
 	struct iocb iocb_arr[AIO_MAX_IODEPTH];
 	struct iocb *piocb_arr[AIO_MAX_IODEPTH];
 	struct io_event io_evts[AIO_MAX_IODEPTH];
+
+	pthread_t sync_thread;
+	struct list_head sync_commands;
+	pthread_cond_t sync_queue_cond;
+	pthread_mutex_t sync_queue_lock;
+
+	struct list_head sync_done;
+	pthread_mutex_t sync_done_lock;
+	int evt_sync_done;
 };
 
 static struct list_head bs_aio_dev_list = LIST_HEAD_INIT(bs_aio_dev_list);
@@ -219,7 +230,24 @@ static int bs_aio_cmd_submit(struct scsi_cmd *cmd)
 		return -1;
 
 	case SYNCHRONIZE_CACHE:
-	case SYNCHRONIZE_CACHE_16:
+	case SYNCHRONIZE_CACHE_16: {
+		/* FIXME: it can be the case that sync submission is
+		 * better done through bs_aio_submit_dev_batch, making
+		 * correct nwaiting & npending accounting easier and
+		 * ensuring depth limit applies to syncs as well.
+		 */
+		int should_signal;
+		set_cmd_async(cmd);
+
+		pthread_mutex_lock(&info->sync_queue_lock);
+		should_signal = list_empty(&info->sync_commands);
+		list_add_tail(&cmd->bs_list,&info->sync_commands);
+		pthread_mutex_unlock(&info->sync_queue_lock);
+
+		if (should_signal)
+			pthread_cond_signal(&info->sync_queue_cond);
+	}
+		return 0;
 	default:
 		dprintf("skipped cmd:%p op:%x\n", cmd, scsi_op);
 		return 0;
@@ -266,6 +294,33 @@ static void bs_aio_complete_one(struct io_event *ep)
 	}
 	dprintf("cmd: %p\n", cmd);
 	target_cmd_io_done(cmd, result);
+}
+
+static void bs_aio_get_sync_done(int fd, int events, void *data)
+{
+	struct bs_aio_info *info = data;
+	int ret;
+	/* read from eventfd returns 8-byte int, fails with the error EINVAL
+	   if the size of the supplied buffer is less than 8 bytes */
+	uint64_t evts_complete;
+	LIST_HEAD(done);
+	struct scsi_cmd *cmd, *next;
+
+	ret = read(info->evt_sync_done, &evts_complete, sizeof(evts_complete));
+
+	if (unlikely(ret < 0)) {
+		eprintf("failed to read fdatasync completions, %m\n");
+		return;
+	}
+
+	pthread_mutex_lock(&info->sync_done_lock);
+	list_splice_init(&info->sync_done,&done);
+	pthread_mutex_unlock(&info->sync_done_lock);
+
+	list_for_each_entry_safe(cmd, next, &done, bs_list) {
+		target_cmd_io_done(cmd, scsi_get_result(cmd));
+		list_del(&cmd->bs_list);
+	}
 }
 
 static void bs_aio_get_completions(int fd, int events, void *data)
@@ -319,7 +374,7 @@ retry_getevts:
 static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 {
 	struct bs_aio_info *info = BS_AIO_I(lu);
-	int ret, afd;
+	int ret, afd, sfd;
 	uint32_t blksize = 0;
 
 	info->iodepth = AIO_MAX_IODEPTH;
@@ -343,8 +398,24 @@ static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 
 	ret = tgt_event_add(afd, EPOLLIN, bs_aio_get_completions, info);
 	if (ret)
-		goto close_eventfd;
+		goto close_afd;
 	info->evt_fd = afd;
+
+	sfd = eventfd(0, O_NONBLOCK);
+	if (sfd < 0) {
+		eprintf("failed to create eventfd for tgt:%d lun:%"PRId64 ", %m\n",
+			info->lu->tgt->tid, info->lu->lun);
+		ret = sfd;
+		goto remove_tgt_evt_afd;
+	}
+	dprintf("eventfd:%d for tgt:%d lun:%"PRId64 "\n",
+		sfd, info->lu->tgt->tid, info->lu->lun);
+
+	ret = tgt_event_add(sfd, EPOLLIN, bs_aio_get_sync_done, info);
+	if (ret)
+		goto close_sfd;
+	info->evt_sync_done = sfd;
+
 
 	eprintf("open %s, RW, O_DIRECT for tgt:%d lun:%"PRId64 "\n",
 		path, info->lu->tgt->tid, info->lu->lun);
@@ -362,7 +433,7 @@ static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 		eprintf("failed to open %s, for tgt:%d lun:%"PRId64 ", %m\n",
 			path, info->lu->tgt->tid, info->lu->lun);
 		ret = *fd;
-		goto remove_tgt_evt;
+		goto remove_tgt_evt_sfd;
 	}
 
 	eprintf("%s opened successfully for tgt:%d lun:%"PRId64 "\n",
@@ -373,9 +444,13 @@ static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 
 	return 0;
 
-remove_tgt_evt:
+remove_tgt_evt_sfd:
+	tgt_event_del(sfd);
+close_sfd:
+	close(sfd);
+remove_tgt_evt_afd:
 	tgt_event_del(afd);
-close_eventfd:
+close_afd:
 	close(afd);
 close_ctx:
 	io_destroy(info->ctx);
@@ -385,6 +460,44 @@ close_ctx:
 static void bs_aio_close(struct scsi_lu *lu)
 {
 	close(lu->fd);
+}
+
+/* Unlock mutex even if thread is cancelled */
+static void mutex_cleanup(void *mutex)
+{
+	pthread_mutex_unlock(mutex);
+}
+
+static void *bs_aio_sync_worker(void* arg)
+{
+	struct bs_aio_info *info = arg;
+	int ret;
+	LIST_HEAD(commands);
+	struct scsi_cmd *cmd, *next;
+
+	while(1) {
+		pthread_mutex_lock(&info->sync_queue_lock);
+		pthread_cleanup_push(mutex_cleanup,&info->sync_queue_lock);
+		while(list_empty(&info->sync_commands)) {
+			pthread_cond_wait(&info->sync_queue_cond, &info->sync_queue_lock);
+		}
+		list_splice_init(&info->sync_commands,&commands);
+		pthread_cleanup_pop(1);
+		ret = fdatasync(info->lu->fd);
+		list_for_each_entry_safe(cmd, next, &commands, bs_list) {
+			if (ret<0) {
+				scsi_set_result(cmd, SAM_STAT_CHECK_CONDITION);
+				sense_data_build(cmd, MEDIUM_ERROR, 0);
+			} else {
+				scsi_set_result(cmd, SAM_STAT_GOOD);
+			}
+		}
+
+		pthread_mutex_lock(&info->sync_done_lock);
+		list_splice_init(&commands,&info->sync_done);
+		pthread_mutex_unlock(&info->sync_done_lock);
+		eventfd_write(info->evt_sync_done, 1);
+	}
 }
 
 static tgtadm_err bs_aio_init(struct scsi_lu *lu, char *bsopts)
@@ -400,6 +513,14 @@ static tgtadm_err bs_aio_init(struct scsi_lu *lu, char *bsopts)
 	for (i=0; i < ARRAY_SIZE(info->iocb_arr); i++)
 		info->piocb_arr[i] = &info->iocb_arr[i];
 
+	INIT_LIST_HEAD(&info->sync_commands);
+	INIT_LIST_HEAD(&info->sync_done);
+	pthread_cond_init(&info->sync_queue_cond,NULL);
+	pthread_mutex_init(&info->sync_queue_lock,NULL);
+	pthread_mutex_init(&info->sync_done_lock,NULL);
+
+	pthread_create(&info->sync_thread, NULL, bs_aio_sync_worker, info);
+
 	return TGTADM_SUCCESS;
 }
 
@@ -409,6 +530,8 @@ static void bs_aio_exit(struct scsi_lu *lu)
 
 	close(info->evt_fd);
 	io_destroy(info->ctx);
+	pthread_cancel(info->sync_thread);
+	pthread_join(info->sync_thread,NULL);
 }
 
 static struct backingstore_template aio_bst = {
