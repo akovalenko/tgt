@@ -471,6 +471,7 @@ static void mutex_cleanup(void *mutex)
 static void *bs_aio_sync_worker(void* arg)
 {
 	struct bs_aio_info *info = arg;
+	int should_signal;
 	int ret;
 	LIST_HEAD(commands);
 	struct scsi_cmd *cmd, *next;
@@ -494,9 +495,12 @@ static void *bs_aio_sync_worker(void* arg)
 		}
 
 		pthread_mutex_lock(&info->sync_done_lock);
+		should_signal = list_empty(&info->sync_done);
 		list_splice_init(&commands,&info->sync_done);
 		pthread_mutex_unlock(&info->sync_done_lock);
-		eventfd_write(info->evt_sync_done, 1);
+		if (should_signal) {
+			eventfd_write(info->evt_sync_done, 1);
+		}
 	}
 }
 
