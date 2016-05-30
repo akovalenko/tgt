@@ -49,6 +49,10 @@
 
 
 struct bs_aio_info {
+	/* Placing struct bs_thread_info at the beginning of
+	 * bs_aio_info allows for a kind of single-inheritance of
+	 * bs_thread_cmd_submit implementation. Don't put any other
+	 * elements here. */
 	struct bs_thread_info thread_info;
 	struct list_head dev_list_entry;
 	io_context_t ctx;
