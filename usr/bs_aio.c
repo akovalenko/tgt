@@ -39,6 +39,7 @@
 #include "tgtd.h"
 #include "target.h"
 #include "scsi.h"
+#include "bs_thread.h"
 
 #ifndef O_DIRECT
 #define O_DIRECT 040000
@@ -48,6 +49,7 @@
 
 
 struct bs_aio_info {
+	struct bs_thread_info thread_info;
 	struct list_head dev_list_entry;
 	io_context_t ctx;
 
@@ -81,6 +83,14 @@ static inline struct bs_aio_info *BS_AIO_I(struct scsi_lu *lu)
 {
 	return (struct bs_aio_info *) ((char *)lu + sizeof(*lu));
 }
+
+static void set_medium_error(int *result, uint8_t *key, uint16_t *asc)
+{
+	*result = SAM_STAT_CHECK_CONDITION;
+	*key = MEDIUM_ERROR;
+	*asc = ASC_READ_ERROR;
+}
+
 
 static void bs_aio_iocb_prep(struct bs_aio_info *info, int idx,
 			     struct scsi_cmd *cmd)
@@ -226,8 +236,8 @@ static int bs_aio_cmd_submit(struct scsi_cmd *cmd)
 
 	case WRITE_SAME:
 	case WRITE_SAME_16:
-		eprintf("WRITE_SAME not yet supported for AIO backend.\n");
-		return -1;
+	case UNMAP:
+		return bs_thread_cmd_submit(cmd);
 
 	case SYNCHRONIZE_CACHE:
 	case SYNCHRONIZE_CACHE_16: {
@@ -468,6 +478,124 @@ static void mutex_cleanup(void *mutex)
 	pthread_mutex_unlock(mutex);
 }
 
+static void bs_aio_thread_request(struct scsi_cmd *cmd)
+{
+	int ret, fd = cmd->dev->fd;
+	uint32_t length;
+	int result = SAM_STAT_GOOD;
+	uint8_t key;
+	uint16_t asc;
+	char *tmpbuf;
+	size_t blocksize;
+	uint64_t offset = cmd->offset;
+	uint32_t tl     = cmd->tl;
+
+	ret = length = 0;
+	key = asc = 0;
+
+	switch (cmd->scb[0])
+	{
+	case WRITE_SAME:
+	case WRITE_SAME_16:
+		/* WRITE_SAME used to punch hole in file */
+		if (cmd->scb[1] & 0x08) {
+			ret = unmap_file_region(fd, offset, tl);
+			if (ret != 0) {
+				eprintf("Failed to punch hole for WRITE_SAME"
+					" command\n");
+				result = SAM_STAT_CHECK_CONDITION;
+				key = HARDWARE_ERROR;
+				asc = ASC_INTERNAL_TGT_FAILURE;
+				break;
+			}
+			break;
+		}
+		while (tl > 0) {
+			blocksize = 1 << cmd->dev->blk_shift;
+			tmpbuf = scsi_get_out_buffer(cmd);
+
+			switch(cmd->scb[1] & 0x06) {
+			case 0x02: /* PBDATA==0 LBDATA==1 */
+				put_unaligned_be32(offset, tmpbuf);
+				break;
+			case 0x04: /* PBDATA==1 LBDATA==0 */
+				/* physical sector format */
+				put_unaligned_be64(offset, tmpbuf);
+				break;
+			}
+
+			ret = pwrite64(fd, tmpbuf, blocksize, offset);
+			if (ret != blocksize)
+				set_medium_error(&result, &key, &asc);
+
+			offset += blocksize;
+			tl     -= blocksize;
+		}
+		break;
+	case UNMAP:
+		if (!cmd->dev->attrs.thinprovisioning) {
+			result = SAM_STAT_CHECK_CONDITION;
+			key = ILLEGAL_REQUEST;
+			asc = ASC_INVALID_FIELD_IN_CDB;
+			break;
+		}
+
+		length = scsi_get_out_length(cmd);
+		tmpbuf = scsi_get_out_buffer(cmd);
+
+		if (length < 8)
+			break;
+
+		length -= 8;
+		tmpbuf += 8;
+
+		while (length >= 16) {
+			offset = get_unaligned_be64(&tmpbuf[0]);
+			offset = offset << cmd->dev->blk_shift;
+
+			tl = get_unaligned_be32(&tmpbuf[8]);
+			tl = tl << cmd->dev->blk_shift;
+
+			if (offset + tl > cmd->dev->size) {
+				eprintf("UNMAP beyond EOF\n");
+				result = SAM_STAT_CHECK_CONDITION;
+				key = ILLEGAL_REQUEST;
+				asc = ASC_LBA_OUT_OF_RANGE;
+				break;
+			}
+
+			if (tl > 0) {
+				if (unmap_file_region(fd, offset, tl) != 0) {
+					eprintf("Failed to punch hole for"
+						" UNMAP at offset:%" PRIu64
+						" length:%d\n",
+						offset, tl);
+					result = SAM_STAT_CHECK_CONDITION;
+					key = HARDWARE_ERROR;
+					asc = ASC_INTERNAL_TGT_FAILURE;
+					break;
+				}
+			}
+
+			length -= 16;
+			tmpbuf += 16;
+		}
+		break;
+	default:
+		break;
+	}
+
+	dprintf("io done %p %x %d %u\n", cmd, cmd->scb[0], ret, length);
+
+	scsi_set_result(cmd, result);
+
+	if (result != SAM_STAT_GOOD) {
+		eprintf("io error %p %x %d %d %" PRIu64 ", %m\n",
+			cmd, cmd->scb[0], ret, length, offset);
+		sense_data_build(cmd, key, asc);
+	}
+}
+
 static void *bs_aio_sync_worker(void* arg)
 {
 	struct bs_aio_info *info = arg;
@@ -507,9 +635,12 @@ static void *bs_aio_sync_worker(void* arg)
 static tgtadm_err bs_aio_init(struct scsi_lu *lu, char *bsopts)
 {
 	struct bs_aio_info *info = BS_AIO_I(lu);
-	int i;
+	int i,res;
 
 	memset(info, 0, sizeof(*info));
+	res = bs_thread_open(&info->thread_info,bs_aio_thread_request,nr_iothreads);
+	if (res)
+		return res;
 	INIT_LIST_HEAD(&info->dev_list_entry);
 	INIT_LIST_HEAD(&info->cmd_wait_list);
 	info->lu = lu;
@@ -532,6 +663,7 @@ static void bs_aio_exit(struct scsi_lu *lu)
 {
 	struct bs_aio_info *info = BS_AIO_I(lu);
 
+	bs_thread_close(&info->thread_info);
 	close(info->evt_fd);
 	io_destroy(info->ctx);
 	pthread_cancel(info->sync_thread);
