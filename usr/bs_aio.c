@@ -44,6 +44,7 @@
 #endif
 
 #define AIO_MAX_IODEPTH    128
+#define AIO_BOOST_READ_IOPRIO 1
 
 struct bs_aio_info {
 	struct list_head dev_list_entry;
@@ -102,6 +103,7 @@ static void bs_aio_iocb_prep(struct bs_aio_info *info, int idx,
 		iocb->aio_lio_opcode = IO_CMD_PREAD;
 		iocb->u.c.buf = scsi_get_in_buffer(cmd);
 		iocb->u.c.nbytes = scsi_get_in_length(cmd);
+		iocb->aio_reqprio = AIO_BOOST_READ_IOPRIO;
 
 		dprintf("prep RD cmd:%p op:%x buf:0x%p sz:%lx\n",
 			cmd, scsi_op, iocb->u.c.buf, iocb->u.c.nbytes);
