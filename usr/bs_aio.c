@@ -668,7 +668,10 @@ static void bs_aio_exit(struct scsi_lu *lu)
 	struct bs_aio_info *info = BS_AIO_I(lu);
 
 	bs_thread_close(&info->thread_info);
+	tgt_event_del(info->evt_fd);
 	close(info->evt_fd);
+	tgt_event_del(info->evt_sync_done);
+	close(info->evt_sync_done);
 	io_destroy(info->ctx);
 	pthread_cancel(info->sync_thread);
 	pthread_join(info->sync_thread,NULL);
