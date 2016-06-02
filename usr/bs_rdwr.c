@@ -82,7 +82,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 	case ORWRITE_16:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -94,7 +94,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -102,7 +102,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 		for (i = 0; i < length; i++)
 			ptr[i] |= tmpbuf[i];
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd);
 		goto write;
@@ -119,7 +119,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			break;
 		}
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -131,7 +131,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -153,7 +153,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			result = SAM_STAT_CHECK_CONDITION;
 			key = MISCOMPARE;
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -161,7 +161,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			posix_fadvise(fd, offset, length,
 				      POSIX_FADV_NOREUSE);
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd) + length;
 		goto write;
@@ -284,7 +284,7 @@ write:
 verify:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -306,7 +306,7 @@ verify:
 			posix_fadvise(fd, offset, length,
 				      POSIX_FADV_NOREUSE);
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 		break;
 	case UNMAP:
 		if (!cmd->dev->attrs.thinprovisioning) {

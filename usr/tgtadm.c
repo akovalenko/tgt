@@ -303,7 +303,7 @@ retry:
 
 	if (done == len)
 		fputs(buf, stdout);
-	free(buf);
+	pcs_free(buf);
 
 	return 0;
 }
@@ -379,8 +379,8 @@ static int bus_to_host(char *bus)
 	}
 
 	for (i = 0; i < nr; i++)
-		free(namelist[i]);
-	free(namelist);
+		pcs_free(namelist[i]);
+	pcs_free(namelist);
 
 	if (host == -1) {
 		eprintf("can't find bus: %s\n", bus);

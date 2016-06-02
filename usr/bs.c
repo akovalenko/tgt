@@ -446,7 +446,7 @@ destroy_threads:
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
 	pthread_mutex_destroy(&info->startup_lock);
-	free(info->worker_thread);
+	pcs_free(info->worker_thread);
 
 	return TGTADM_NOMEM;
 }
@@ -464,7 +464,7 @@ void bs_thread_close(struct bs_thread_info *info)
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
 	pthread_mutex_destroy(&info->startup_lock);
-	free(info->worker_thread);
+	pcs_free(info->worker_thread);
 
 	info->stop = 0;
 }

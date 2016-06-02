@@ -73,7 +73,7 @@ extern int spc_memcpy(uint8_t *dst, uint32_t *dst_remain_len,
 
 #define zalloc(size)			\
 ({					\
-	void *ptr = malloc(size);	\
+	void *ptr = pcs_malloc(size);	\
 	if (ptr)			\
 		memset(ptr, 0, size);	\
 	else				\

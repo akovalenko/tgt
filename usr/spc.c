@@ -1190,7 +1190,7 @@ static int check_registration_key_exists(struct scsi_lu *lu, uint64_t key)
 static void __unregister(struct scsi_lu *lu, struct registration *reg)
 {
 	list_del(&reg->registration_siblings);
-	free(reg);
+	pcs_free(reg);
 }
 
 static void __unregister_and_clean(struct scsi_cmd *cmd,
@@ -1204,12 +1204,12 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 
 	holder = cmd->dev->pr_holder;
 	if (!holder) {
-		free(reg);
+		pcs_free(reg);
 		return;
 	}
 
 	if (!is_pr_holder(cmd->dev, reg)) {
-		free(reg);
+		pcs_free(reg);
 		return;
 	}
 
@@ -1252,7 +1252,7 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 		}
 	}
 
-	free(reg);
+	pcs_free(reg);
 }
 
 static int check_pr_out_basic_parameter(struct scsi_cmd *cmd)
@@ -1510,7 +1510,7 @@ static int spc_pr_clear(int host_no, struct scsi_cmd *cmd)
 			ua_sense_add_it_nexus(sibling->nexus_id,
 				cmd->dev, ASC_RESERVATIONS_PREEMPTED);
 		list_del(&sibling->registration_siblings);
-		free(sibling);
+		pcs_free(sibling);
 	}
 
 	cmd->dev->prgeneration++;
@@ -1819,7 +1819,7 @@ tgtadm_err add_mode_page(struct scsi_lu *lu, char *p)
 			pg = find_mode_page(lu, pcode, subpcode);
 			if (pg) {
 				list_del(&pg->mode_pg_siblings);
-				free(pg);
+				pcs_free(pg);
 			}
 
 			pg = alloc_mode_pg(pcode, subpcode, size);
@@ -2125,7 +2125,7 @@ void spc_lu_exit(struct scsi_lu *lu)
 
 	for (i = 0; i < ARRAY_SIZE(lu->attrs.lu_vpd); i++)
 		if (lu_vpd[i])
-			free(lu_vpd[i]);
+			pcs_free(lu_vpd[i]);
 
 	while (!list_empty(&lu->mode_pages)) {
 		struct mode_pg *pg;
@@ -2133,6 +2133,6 @@ void spc_lu_exit(struct scsi_lu *lu)
 				       struct mode_pg,
 				       mode_pg_siblings);
 		list_del(&pg->mode_pg_siblings);
-		free(pg);
+		pcs_free(pg);
 	}
 }

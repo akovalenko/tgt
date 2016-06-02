@@ -64,7 +64,7 @@ struct active_rbd {
 
 static void parse_imagepath(char *path, char **pool, char **image, char **snap)
 {
-	char *origp = strdup(path);
+	char *origp = pcs_strdup(path);
 	char *p, *sep;
 
 	p = origp;
@@ -73,7 +73,7 @@ static void parse_imagepath(char *path, char **pool, char **image, char **snap)
 		*pool = "rbd";
 	} else {
 		*sep = '\0';
-		*pool = strdup(p);
+		*pool = pcs_strdup(p);
 		p = sep + 1;
 	}
 	/* p points to image[@snap] */
@@ -81,12 +81,12 @@ static void parse_imagepath(char *path, char **pool, char **image, char **snap)
 	if (sep == NULL) {
 		*snap = "";
 	} else {
-		*snap = strdup(sep + 1);
+		*snap = pcs_strdup(sep + 1);
 		*sep = '\0';
 	}
 	/* p points to image\0 */
-	*image = strdup(p);
-	free(origp);
+	*image = pcs_strdup(p);
+	pcs_free(origp);
 }
 
 static void set_medium_error(int *result, uint8_t *key, uint16_t *asc)
@@ -137,7 +137,7 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 	case ORWRITE_16:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -149,7 +149,7 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -157,7 +157,7 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 		for (i = 0; i < length; i++)
 			ptr[i] |= tmpbuf[i];
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd);
 		goto write;
@@ -174,7 +174,7 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 			break;
 		}
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -186,7 +186,7 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -211,12 +211,12 @@ static void bs_rbd_request(struct scsi_cmd *cmd)
 			result = SAM_STAT_CHECK_CONDITION;
 			key = MISCOMPARE;
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
 		/* no DPO bit (cache retention advice) support */
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd) + length;
 		goto write;
@@ -327,7 +327,7 @@ write:
 verify:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -345,7 +345,7 @@ verify:
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
 		}
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 		break;
 	case UNMAP:
 		if (!cmd->dev->attrs.thinprovisioning) {
@@ -476,7 +476,7 @@ static char *slurp_to_semi(char **p)
 	if (end == NULL)
 		end = *p + strlen(*p);
 	len = end - *p;
-	ret = malloc(len + 1);
+	ret = pcs_malloc(len + 1);
 	strncpy(ret, *p, len);
 	ret[len] = '\0';
 	*p = end;
@@ -536,7 +536,7 @@ static tgtadm_err bs_rbd_init(struct scsi_lu *lu, char *bsopts)
 			ignore = slurp_to_semi(&bsopts);
 			eprintf("bs_rbd: ignoring unknown option \"%s\"\n",
 				ignore);
-			free(ignore);
+			pcs_free(ignore);
 			break;
 		}
 	}
@@ -592,9 +592,9 @@ static tgtadm_err bs_rbd_init(struct scsi_lu *lu, char *bsopts)
 	ret = bs_thread_open(info, bs_rbd_request, nr_iothreads);
 fail:
 	if (confname)
-		free(confname);
+		pcs_free(confname);
 	if (clientid)
-		free(clientid);
+		pcs_free(clientid);
 
 	return ret;
 }

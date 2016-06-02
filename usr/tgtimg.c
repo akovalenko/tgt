@@ -458,7 +458,7 @@ static int sbc_new(int op, char *path, char *capacity, char *media_type, int thi
 			}
 		}
 
-		free(buf);
+		pcs_free(buf);
 		close(fd);
 
 		printf("Created blank DISK image file : %s\n", path);

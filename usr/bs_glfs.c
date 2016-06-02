@@ -102,7 +102,7 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 	case ORWRITE_16:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -114,7 +114,7 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -122,7 +122,7 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 		for (i = 0; i < length; i++)
 			ptr[i] |= tmpbuf[i];
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd);
 		goto write;
@@ -139,7 +139,7 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 			break;
 		}
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -151,7 +151,7 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
@@ -172,11 +172,11 @@ static void bs_glfs_request(struct scsi_cmd *cmd)
 			result = SAM_STAT_CHECK_CONDITION;
 			key = MISCOMPARE;
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
-			free(tmpbuf);
+			pcs_free(tmpbuf);
 			break;
 		}
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 
 		write_buf = scsi_get_out_buffer(cmd) + length;
 		goto write;
@@ -291,7 +291,7 @@ write:
 verify:
 		length = scsi_get_out_length(cmd);
 
-		tmpbuf = malloc(length);
+		tmpbuf = pcs_malloc(length);
 		if (!tmpbuf) {
 			result = SAM_STAT_CHECK_CONDITION;
 			key = HARDWARE_ERROR;
@@ -309,7 +309,7 @@ verify:
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
 		}
 
-		free(tmpbuf);
+		pcs_free(tmpbuf);
 		break;
 	case UNMAP:
 		if (!cmd->dev->attrs.thinprovisioning) {
@@ -374,7 +374,7 @@ verify:
 
 static void parse_imagepath(char *image, char **server, char **vol, char **path)
 {
-	char *origp = strdup(image);
+	char *origp = pcs_strdup(image);
 	char *p, *sep;
 
 	p = origp;
@@ -383,20 +383,20 @@ static void parse_imagepath(char *image, char **server, char **vol, char **path)
 		*server = "";
 	} else {
 		*sep = '\0';
-		*server = strdup(p);
+		*server = pcs_strdup(p);
 		p = sep + 1;
 	}
 	sep = strchr(p, ':');
 	if (sep == NULL) {
 		*vol = "";
 	} else {
-		*vol = strdup(sep + 1);
+		*vol = pcs_strdup(sep + 1);
 		*sep = '\0';
 	}
 
 	/* p points to path\0 */
-	*path = strdup(p);
-	free(origp);
+	*path = pcs_strdup(p);
+	pcs_free(origp);
 }
 
 static int bs_glfs_open(struct scsi_lu *lu, char *image, int *fd,
@@ -474,7 +474,7 @@ static char *slurp_to_semi(char **p)
 	if (end == NULL)
 		end = *p + strlen(*p);
 	len = end - *p;
-	ret = malloc(len + 1);
+	ret = pcs_malloc(len + 1);
 	strncpy(ret, *p, len);
 	ret[len] = '\0';
 	*p = end;

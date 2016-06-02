@@ -460,7 +460,7 @@ static void close_my_fd(struct sheepdog_access_info *ai, int fd)
 		if (p->fd == fd) {
 			close(fd);
 			list_del(&p->list);
-			free(p);
+			pcs_free(p);
 			closed = 1;
 
 			break;
@@ -932,7 +932,7 @@ static int sd_open(struct sheepdog_access_info *ai, char *filename, int flags)
 	memset(tag, 0, sizeof(tag));
 	memset(vdi_name, 0, sizeof(vdi_name));
 
-	orig_filename = strdup(filename);
+	orig_filename = pcs_strdup(filename);
 	if (!orig_filename) {
 		eprintf("saving original filename failed\n");
 		return -1;
@@ -1078,7 +1078,7 @@ trans_to_expect_nothing:
 	ret = 0;
 out:
 	strcpy(filename, orig_filename);
-	free(orig_filename);
+	pcs_free(orig_filename);
 
 	return ret;
 }
@@ -1290,7 +1290,7 @@ static void bs_sheepdog_exit(struct scsi_lu *lu)
 	list_for_each_entry_safe(p, next, &ai->fd_list_head, list) {
 		close(p->fd);
 		list_del(&p->list);
-		free(p);
+		pcs_free(p);
 	}
 
 	pthread_rwlock_destroy(&ai->fd_list_lock);

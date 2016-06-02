@@ -46,13 +46,13 @@ void conn_add_to_session(struct iscsi_connection *conn, struct iscsi_session *se
 
 int conn_init(struct iscsi_connection *conn)
 {
-	conn->req_buffer = malloc(INCOMING_BUFSIZE);
+	conn->req_buffer = pcs_malloc(INCOMING_BUFSIZE);
 	if (!conn->req_buffer)
 		return -ENOMEM;
 
-	conn->rsp_buffer = malloc(INCOMING_BUFSIZE);
+	conn->rsp_buffer = pcs_malloc(INCOMING_BUFSIZE);
 	if (!conn->rsp_buffer) {
-		free(conn->req_buffer);
+		pcs_free(conn->req_buffer);
 		return -ENOMEM;
 	}
 	conn->rsp_buffer_size = INCOMING_BUFSIZE;
@@ -73,11 +73,11 @@ void conn_exit(struct iscsi_connection *conn)
 	struct iscsi_session *session = conn->session;
 
 	list_del(&conn->clist);
-	free(conn->req_buffer);
-	free(conn->rsp_buffer);
-	free(conn->initiator);
+	pcs_free(conn->req_buffer);
+	pcs_free(conn->rsp_buffer);
+	pcs_free(conn->initiator);
 	if (conn->initiator_alias)
-		free(conn->initiator_alias);
+		pcs_free(conn->initiator_alias);
 
 	if (session)
 		session_put(session);

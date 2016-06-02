@@ -456,11 +456,11 @@ static void login_start(struct iscsi_connection *conn)
 		conn->state = STATE_EXIT;
 		return;
 	}
-	conn->initiator = strdup(name);
+	conn->initiator = pcs_strdup(name);
 
 	alias = text_key_find(conn, "InitiatorAlias");
 	if (alias)
-		conn->initiator_alias = strdup(alias);
+		conn->initiator_alias = pcs_strdup(alias);
 
 	session_type = text_key_find(conn, "SessionType");
 	target_name = text_key_find(conn, "TargetName");
@@ -2487,12 +2487,12 @@ int iscsi_param_parse_portals(char *p, int do_add,
 				memcpy(tmp, addr, len);
 				if (do_add && iscsi_add_portal(tmp,
 							port, 1)) {
-					free(tmp);
+					pcs_free(tmp);
 					return -1;
 				}
 				if (do_delete && iscsi_delete_portal(tmp,
 							port)) {
-					free(tmp);
+					pcs_free(tmp);
 					return -1;
 				}
 			}

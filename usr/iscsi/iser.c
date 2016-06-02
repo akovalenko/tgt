@@ -604,7 +604,7 @@ static void iser_free_pool(uint8_t *pool_buf, int shmid) {
 			eprintf("shmem detach failure (errno=%d %m)", errno);
 		}
 	} else {
-		free(pool_buf);
+		pcs_free(pool_buf);
 	}
 }
 
@@ -629,7 +629,7 @@ static int iser_init_rdma_buf_pool(struct iser_device *dev)
 	}
 
 	list_size = membuf_num * sizeof(*rdma_buf);
-	list_buf = malloc(list_size);
+	list_buf = pcs_malloc(list_size);
 	if (!list_buf) {
 		eprintf("malloc list_buf sz:%zu failed\n", list_size);
 		iser_free_pool(pool_buf, shmid);
@@ -642,7 +642,7 @@ static int iser_init_rdma_buf_pool(struct iser_device *dev)
 	if (!dev->membuf_mr) {
 		eprintf("ibv_reg_mr failed, %m\n");
 		iser_free_pool(pool_buf, shmid);
-		free(list_buf);
+		pcs_free(list_buf);
 		return -1;
 	}
 	dprintf("pool buf:%p list:%p mr:%p lkey:0x%x\n",
@@ -681,7 +681,7 @@ static void iser_destroy_rdma_buf_pool(struct iser_device *dev)
 		eprintf("ibv_dereg_mr failed: (errno=%d %m)\n", errno);
 
 	iser_free_pool(dev->membuf_regbuf, dev->rdma_hugetbl_shmid);
-	free(dev->membuf_listbuf);
+	pcs_free(dev->membuf_listbuf);
 
 	dev->membuf_mr = NULL;
 	dev->membuf_regbuf = NULL;
@@ -848,7 +848,7 @@ static void iser_complete_task(struct iser_task *task)
 		iser_conn_put(conn);
 	}
 	if (task->extdata) {
-		free(task->extdata);
+		pcs_free(task->extdata);
 		task->extdata = NULL;
 	}
 }
@@ -896,7 +896,7 @@ static int iser_alloc_login_resources(struct iser_conn *conn)
 	dprintf("conn:%p login tasks num:%u, buf_sz:%lu (rx_sz:%u tx_sz:%u)\n",
 		&conn->h, NUM_LOGIN_TASKS, buf_size, conn->rsize, conn->ssize);
 
-	conn->login_data_pool = malloc(pool_size);
+	conn->login_data_pool = pcs_malloc(pool_size);
 	if (!conn->login_data_pool) {
 		eprintf("conn:%p malloc login_data_pool sz:%lu failed\n",
 			&conn->h, pool_size);
@@ -908,20 +908,20 @@ static int iser_alloc_login_resources(struct iser_conn *conn)
 					 pool_size, IBV_ACCESS_LOCAL_WRITE);
 	if (!conn->login_data_mr) {
 		eprintf("conn:%p ibv_reg_mr login pool failed, %m\n", &conn->h);
-		free(conn->login_data_pool);
+		pcs_free(conn->login_data_pool);
 		conn->login_data_pool = NULL;
 		err = -1;
 		goto out;
 	}
 
 	pool_size = NUM_LOGIN_TASKS * sizeof(struct iser_task);
-	conn->login_task_pool = malloc(pool_size);
+	conn->login_task_pool = pcs_malloc(pool_size);
 	if (!conn->login_task_pool) {
 		eprintf("conn:%p malloc login_task_pool sz:%lu failed\n",
 			&conn->h, pool_size);
 		ibv_dereg_mr(conn->login_data_mr);
 		conn->login_data_mr = NULL;
-		free(conn->login_data_pool);
+		pcs_free(conn->login_data_pool);
 		conn->login_data_pool = NULL;
 		goto out;
 	}
@@ -975,9 +975,9 @@ static void iser_free_login_resources(struct iser_conn *conn)
 			eprintf("conn:%p ibv_dereg_mr failed, %m\n", &conn->h);
 	}
 	if (conn->login_data_pool)
-		free(conn->login_data_pool);
+		pcs_free(conn->login_data_pool);
 	if (conn->login_task_pool)
-		free(conn->login_task_pool);
+		pcs_free(conn->login_task_pool);
 	conn->login_tx_task = NULL;
 
 	conn->login_res_alloc = 0;
@@ -1003,7 +1003,7 @@ static int iser_alloc_ff_resources(struct iser_conn *conn)
 		conn->ssize, conn->rsize);
 
 	alloc_sz = num_tasks * buf_size;
-	conn->pdu_data_pool = malloc(alloc_sz);
+	conn->pdu_data_pool = pcs_malloc(alloc_sz);
 	if (!conn->pdu_data_pool) {
 		eprintf("conn:%p malloc pdu_data_buf sz:%lu failed\n",
 			&conn->h, alloc_sz);
@@ -1016,20 +1016,20 @@ static int iser_alloc_ff_resources(struct iser_conn *conn)
 	if (!conn->pdu_data_mr) {
 		eprintf("conn:%p ibv_reg_mr pdu_data_pool failed, %m\n",
 			&conn->h);
-		free(conn->pdu_data_pool);
+		pcs_free(conn->pdu_data_pool);
 		conn->pdu_data_pool = NULL;
 		err = -1;
 		goto out;
 	}
 
 	alloc_sz = num_tasks * sizeof(struct iser_task);
-	conn->task_pool = malloc(alloc_sz);
+	conn->task_pool = pcs_malloc(alloc_sz);
 	if (!conn->task_pool) {
 		eprintf("conn:%p malloc task_pool sz:%lu failed\n",
 			&conn->h, alloc_sz);
 		ibv_dereg_mr(conn->pdu_data_mr);
 		conn->pdu_data_mr = NULL;
-		free(conn->pdu_data_pool);
+		pcs_free(conn->pdu_data_pool);
 		conn->pdu_data_pool = NULL;
 		err = -1;
 		goto out;
@@ -1101,9 +1101,9 @@ static void iser_free_ff_resources(struct iser_conn *conn)
 			eprintf("conn:%p ibv_dereg_mr failed, %m\n", &conn->h);
 	}
 	if (conn->pdu_data_pool)
-		free(conn->pdu_data_pool);
+		pcs_free(conn->pdu_data_pool);
 	if (conn->task_pool)
-		free(conn->task_pool);
+		pcs_free(conn->task_pool);
 	conn->nop_in_task = NULL;
 	conn->text_tx_task = NULL;
 
@@ -1343,18 +1343,18 @@ void iser_conn_free(struct iser_conn *conn)
 	list_del(&conn->h.clist);
 
 	if (conn->h.initiator)
-		free(conn->h.initiator);
+		pcs_free(conn->h.initiator);
 
 	if (conn->h.session)
 		session_put(conn->h.session);
 
 	if (conn->peer_name)
-		free(conn->peer_name);
+		pcs_free(conn->peer_name);
 	if (conn->self_name)
-		free(conn->self_name);
+		pcs_free(conn->self_name);
 
 	conn->h.state = STATE_INIT;
-	free(conn);
+	pcs_free(conn);
 	dprintf("conn:%p freed\n", &conn->h);
 }
 
@@ -1402,7 +1402,7 @@ static int iser_get_host_name(struct sockaddr_storage *addr, char **name)
 	err = getnameinfo((struct sockaddr *) addr, sizeof(*addr),
 			  host, sizeof(host), NULL, 0, NI_NUMERICHOST);
 	if (!err) {
-		*name = strdup(host);
+		*name = pcs_strdup(host);
 		if (*name == NULL)
 			err = -ENOMEM;
 	} else
@@ -1466,7 +1466,7 @@ static void iser_cm_connect_request(struct rdma_cm_event *ev)
 		}
 	}
 	if (!dev_found) {
-		dev = malloc(sizeof(*dev));
+		dev = pcs_malloc(sizeof(*dev));
 		if (dev == NULL) {
 			eprintf("cm_id:%p malloc dev failed\n", cm_id);
 			goto reject;
@@ -1474,7 +1474,7 @@ static void iser_cm_connect_request(struct rdma_cm_event *ev)
 		dev->ibv_ctxt = cm_id->verbs;
 		err = iser_device_init(dev);
 		if (err) {
-			free(dev);
+			pcs_free(dev);
 			goto reject;
 		}
 	}
@@ -1488,7 +1488,7 @@ static void iser_cm_connect_request(struct rdma_cm_event *ev)
 
 	err = iser_conn_init(conn);
 	if (err) {
-		free(conn);
+		pcs_free(conn);
 		goto reject;
 	}
 	dprintf("alloc conn:%p cm_id:%p\n", &conn->h, cm_id);
@@ -1520,13 +1520,13 @@ static void iser_cm_connect_request(struct rdma_cm_event *ev)
 	       sizeof(conn->peer_addr));
 	err = iser_get_host_name(&conn->peer_addr, &conn->peer_name);
 	if (err)
-		conn->peer_name = strdup("Unresolved");
+		conn->peer_name = pcs_strdup("Unresolved");
 
 	memcpy(&conn->self_addr, &cm_id->route.addr.src_addr,
 	       sizeof(conn->self_addr));
 	err = iser_get_host_name(&conn->self_addr, &conn->self_name);
 	if (err)
-		conn->self_name = strdup("Unresolved");
+		conn->self_name = pcs_strdup("Unresolved");
 
 	/* create qp */
 	memset(&qp_init_attr, 0, sizeof(qp_init_attr));
@@ -2321,7 +2321,7 @@ static int iser_task_handle_ahs(struct iser_task *task)
 
 				return -EINVAL;
 			}
-			p = malloc(total_cdb_len);
+			p = pcs_malloc(total_cdb_len);
 			if (!p) {
 				eprintf("failed to allocate extdata len:%d\n", total_cdb_len);
 				return -ENOMEM;
@@ -3405,7 +3405,7 @@ static void iser_ib_release(void)
 
 	list_for_each_entry_safe(dev, tdev, &iser_dev_list, list) {
 	        iser_device_release(dev);
-		free(dev);
+		pcs_free(dev);
 	}
 
 	if (cma_listen_id) {

@@ -308,7 +308,7 @@ static int isns_eid_attr_query(void)
 		if (isns_connect() < 0)
 			return 0;
 
-	mgmt = malloc(sizeof(*mgmt));
+	mgmt = pcs_malloc(sizeof(*mgmt));
 	if (!mgmt)
 		return 0;
 	list_add(&mgmt->qlist, &qry_list);
@@ -356,7 +356,7 @@ static int isns_attr_query(char *name)
 		if (isns_connect() < 0)
 			return 0;
 
-	mgmt = malloc(sizeof(*mgmt));
+	mgmt = pcs_malloc(sizeof(*mgmt));
 	if (!mgmt)
 		return 0;
 	list_add(&mgmt->qlist, &qry_list);
@@ -514,7 +514,7 @@ static void free_all_acl(struct iscsi_target *target)
 	while (!list_empty(&target->isns_list)) {
 		ini = list_first_entry(&target->isns_list, typeof(*ini), ilist);
 		list_del(&ini->ilist);
-		free(ini);
+		pcs_free(ini);
 	}
 }
 
@@ -759,7 +759,7 @@ found:
 		case ISNS_ATTR_ISCSI_NODE_TYPE:
 			if (ntohl(*(tlv->value)) == ISNS_NODE_INITIATOR && name) {
 				eprintf("%s\n", (char *) name);
-				ini = malloc(sizeof(*ini));
+				ini = pcs_malloc(sizeof(*ini));
 				if (!ini)
 					goto free_qry_mgmt;
 				snprintf(ini->name, sizeof(ini->name), "%s", name);
@@ -787,7 +787,7 @@ found:
 		isns_timeout = reg_period - 10;
 
 free_qry_mgmt:
-	free(mgmt);
+	pcs_free(mgmt);
 }
 
 static void isns_handle(int fd, int events, void *data)
@@ -1084,7 +1084,7 @@ void isns_exit(void)
 	}
 
 	num_targets = use_isns = isns_fd = scn_listen_fd = scn_fd = 0;
-	free(rxbuf);
+	pcs_free(rxbuf);
 }
 
 tgtadm_err isns_show(struct concat_buf *b)

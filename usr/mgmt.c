@@ -595,9 +595,9 @@ static void mtask_free(struct mgmt_task *mtask)
 	dprintf("mtask:%p\n", mtask);
 
 	if (mtask->req_buf)
-		free(mtask->req_buf);
+		pcs_free(mtask->req_buf);
 	concat_buf_release(&mtask->rsp_concat);
-	free(mtask);
+	pcs_free(mtask);
 }
 
 static int mtask_received(struct mgmt_task *mtask, int fd)

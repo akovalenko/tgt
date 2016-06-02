@@ -89,25 +89,25 @@ int session_create(struct iscsi_connection *conn)
 	if (!session)
 		return -ENOMEM;
 
-	session->initiator = strdup(conn->initiator);
+	session->initiator = pcs_strdup(conn->initiator);
 	if (!session->initiator) {
-		free(session);
+		pcs_free(session);
 		return -ENOMEM;
 	}
 
 	if (conn->initiator_alias) {
-		session->initiator_alias = strdup(conn->initiator_alias);
+		session->initiator_alias = pcs_strdup(conn->initiator_alias);
 		if (!session->initiator_alias) {
-			free(session);
+			pcs_free(session);
 			return -ENOMEM;
 		}
 	}
 
 	session->info = zalloc(1024);
 	if (!session->info) {
-		free(session->initiator);
-		free(session->initiator_alias);
-		free(session);
+		pcs_free(session->initiator);
+		pcs_free(session->initiator_alias);
+		pcs_free(session);
 		return -ENOMEM;
 	}
 
@@ -122,10 +122,10 @@ int session_create(struct iscsi_connection *conn)
 
 	err = it_nexus_create(target->tid, tsih, 0, session->info);
 	if (err) {
-		free(session->initiator);
-		free(session->initiator_alias);
-		free(session->info);
-		free(session);
+		pcs_free(session->initiator);
+		pcs_free(session->initiator_alias);
+		pcs_free(session->info);
+		pcs_free(session);
 		return err;
 	}
 
@@ -173,10 +173,10 @@ static void session_destroy(struct iscsi_session *session)
 
 	list_del(&session->hlist);
 
-	free(session->initiator);
-	free(session->initiator_alias);
-	free(session->info);
-	free(session);
+	pcs_free(session->initiator);
+	pcs_free(session->initiator_alias);
+	pcs_free(session->info);
+	pcs_free(session);
 }
 
 void session_get(struct iscsi_session *session)
