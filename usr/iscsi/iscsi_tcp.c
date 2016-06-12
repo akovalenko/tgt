@@ -574,15 +574,33 @@ static void iscsi_tcp_free_task(struct iscsi_task *task)
 	pcs_free(task);
 }
 
+static void *valloc0(size_t sz)
+{
+	void *ptr = malloc(sz+pagesize+sizeof(void*));
+	if (ptr) {
+		uintptr_t uiblk = (uintptr_t)ptr;
+		uintptr_t uidata = (((uiblk+sizeof(void*))-1)|(pagesize-1))+1;
+		*(void**)(uidata-sizeof(void*))=ptr;
+		return (void*)uidata;
+	} else {
+		return NULL;
+	}
+}
+
+static void vfree0(void *buf) {
+	if (buf)
+		free(*(void**)((uintptr_t)buf - sizeof(void*)));
+}
+
 static void *iscsi_tcp_alloc_data_buf(struct iscsi_connection *conn, size_t sz)
 {
-	return valloc(sz);
+	return valloc0(sz);
 }
 
 static void iscsi_tcp_free_data_buf(struct iscsi_connection *conn, void *buf)
 {
 	if (buf)
-		free(buf);
+		vfree0(buf);
 }
 
 static int iscsi_tcp_getsockname(struct iscsi_connection *conn,
