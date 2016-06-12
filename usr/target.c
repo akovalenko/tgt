@@ -604,6 +604,7 @@ tgtadm_err tgt_device_create(int tid, int dev_type, uint64_t lun, char *params,
 	INIT_LIST_HEAD(&lu->mode_pages);
 	lu->prgeneration = 0;
 	lu->pr_holder = NULL;
+	lu->prs.fd = -1;
 
 	lu->cmd_perform = &target_cmd_perform;
 	lu->cmd_done = &__cmd_done;
@@ -1958,6 +1959,21 @@ tgtadm_err tgt_set_target_state(int tid, char *str)
 	return adm_err;
 }
 
+tgtadm_err tgt_set_target_pr_dir(int tid, char *str)
+{
+	struct target *target;
+
+	target = target_lookup(tid);
+	if (!target)
+		return TGTADM_NO_TARGET;
+
+	target->pr_dir = strdup(str);
+	if (!target->pr_dir)
+		return TGTADM_NOMEM;
+
+	return TGTADM_SUCCESS;
+}
+
 static char *print_disksize(uint64_t size)
 {
 	static char buf[64];
@@ -2251,6 +2267,8 @@ tgtadm_err tgt_target_destroy(int lld_no, int tid, int force)
 
 	list_del(&target->lld_siblings);
 
+	if (target->pr_dir)
+		free(target->pr_dir);
 	free(target->account.in_aids);
 	free(target->name);
 	free(target);

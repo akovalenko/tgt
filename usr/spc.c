@@ -35,6 +35,7 @@
 #include "tgtadm_error.h"
 #include "scsi.h"
 #include "spc.h"
+#include "prstore.h"
 
 #define INQUIRY_EVPD	0x01
 
@@ -1008,8 +1009,8 @@ int spc_service_action(int host_no, struct scsi_cmd *cmd)
 
 static int is_pr_holder(struct scsi_lu *lu, struct registration *reg)
 {
-	if (lu->pr_holder->pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
-	    lu->pr_holder->pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)
+	if (lu->pr_holder->st.pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
+	    lu->pr_holder->st.pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)
 		return 1;
 
 	if (lu->pr_holder == reg)
@@ -1044,7 +1045,7 @@ static int spc_pr_read_keys(int host_no, struct scsi_cmd *cmd)
 	list_for_each_entry(reg, &cmd->dev->registration_list,
 			    registration_siblings) {
 
-		reg_key = __cpu_to_be64(reg->key);
+		reg_key = __cpu_to_be64(reg->st.key);
 		actual_len += spc_memcpy(&buf[actual_len], &remain_len,
 					 (uint8_t *)&reg_key, 8);
 		avail_len += 8;
@@ -1088,16 +1089,16 @@ static int spc_pr_read_reservation(int host_no, struct scsi_cmd *cmd)
 	put_unaligned_be32(add_len, &buf[4]); /* additional length */
 
 	if (reg) {
-		if (reg->pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
-		    reg->pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)
+		if (reg->st.pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
+		    reg->st.pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)
 			res_key = 0;
 		else
-			res_key = reg->key;
+			res_key = reg->st.key;
 
 		put_unaligned_be64(res_key, &buf[8]);
 
-		buf[21] = (reg->pr_scope << 4) & 0xf0;
-		buf[21] |= reg->pr_type & 0x0f;
+		buf[21] = (reg->st.pr_scope << 4) & 0xf0;
+		buf[21] |= reg->st.pr_type & 0x0f;
 	}
 
 	data = scsi_get_in_buffer(cmd);
@@ -1130,7 +1131,10 @@ static int spc_pr_report_capabilities(int host_no, struct scsi_cmd *cmd)
 
 	put_unaligned_be16(avail_len, &buf[0]); /* length */
 
-	/* we don't set any capability for now */
+	/* set only PTPL capabilities for now */
+	buf[2] |= 0x1; /* PTPL_C */
+	if (cmd->dev->prs.enable)
+		buf[3] |= 0x1; /* PTPL_A */
 
 	/* Persistent Reservation Type Mask format */
 	buf[3] |= 0x80; /* Type Mask Valid (TMV) */
@@ -1174,22 +1178,61 @@ static struct registration *lookup_registration_by_nexus(struct scsi_lu *lu,
 	return NULL;
 }
 
+static struct registration *lookup_registration_by_iname(struct scsi_lu *lu,
+		char *iname, unsigned int ilen)
+{
+	struct registration *reg;
+
+	list_for_each_entry(reg, &lu->registration_list, registration_siblings) {
+		if (reg->st.ilen == ilen &&
+		    memcmp(reg->st.iname, iname, ilen) == 0)
+			return reg;
+	}
+
+	return NULL;
+}
+
+static struct registration *lookup_registration_by_nexus_or_iname(struct scsi_lu *lu,
+		struct it_nexus *itn)
+{
+	int (*id)(int, uint64_t, char *, int);
+	struct registration *reg;
+
+	id = tgt_drivers[lu->tgt->lid]->transportid;
+
+	reg = lookup_registration_by_nexus(lu, itn);
+	if (!reg && id) {
+		char buf[223];
+		int len;
+		len = id(lu->tgt->tid, itn->itn_id, buf, sizeof(buf));
+		reg = lookup_registration_by_iname(lu, buf, len);
+		if (reg) {
+			reg->nexus_id = itn->itn_id;
+			reg->ctime = itn->ctime;
+		}
+	}
+
+	return reg;
+}
+
 static int check_registration_key_exists(struct scsi_lu *lu, uint64_t key)
 {
 	struct registration *reg;
 
 	list_for_each_entry(reg, &lu->registration_list,
 				registration_siblings) {
-		if (reg->key == key)
+		if (reg->st.key == key)
 			return 0;
 	}
 
 	return 1;
 }
 
-static void __unregister(struct scsi_lu *lu, struct registration *reg)
+static void __unregister(struct scsi_cmd *cmd, struct registration *reg)
 {
 	list_del(&reg->registration_siblings);
+	/* cleanup slot */
+	//prstore_delete(reg->slot, cmd);
 	free(reg);
 }
 
@@ -1201,6 +1244,8 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 
 	/* if reservation owner goes away then so does reservation */
 	list_del(&reg->registration_siblings);
+	/* cleanup slot */
+	prstore_delete(reg->slot, cmd);
 
 	holder = cmd->dev->pr_holder;
 	if (!holder) {
@@ -1213,14 +1258,14 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 		return;
 	}
 
-	if (((holder->pr_type != PR_TYPE_WRITE_EXCLUSIVE_ALLREG) &&
-	     (holder->pr_type != PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)) ||
+	if (((holder->st.pr_type != PR_TYPE_WRITE_EXCLUSIVE_ALLREG) &&
+	     (holder->st.pr_type != PR_TYPE_EXCLUSIVE_ACCESS_ALLREG)) ||
 	    list_empty(&cmd->dev->registration_list)) {
 
 		/* not all-registrants or no more registrants */
 
-		holder->pr_scope = 0;
-		holder->pr_type = 0;
+		holder->st.pr_scope = 0;
+		holder->st.pr_type = 0;
 		cmd->dev->pr_holder = NULL;
 
 		/* tell other registrants the reservation went away */
@@ -1245,8 +1290,8 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 			if (registrant != reg) {
 				/* give resvn to any sibling */
 				cmd->dev->pr_holder = registrant;
-				registrant->pr_scope = holder->pr_scope;
-				registrant->pr_type = holder->pr_type;
+				registrant->st.pr_scope = holder->st.pr_scope;
+				registrant->st.pr_type = holder->st.pr_type;
 				break;
 			}
 		}
@@ -1305,18 +1350,23 @@ static int spc_pr_register(int host_no, struct scsi_cmd *cmd)
 	res_key = get_unaligned_be64(buf);
 	sa_res_key = get_unaligned_be64(buf + 8);
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (reg) {
-		if (force || reg->key == res_key) {
-			if (sa_res_key)
-				reg->key = sa_res_key;
-			else
+		if (force || reg->st.key == res_key) {
+			if (sa_res_key) {
+				reg->st.key = sa_res_key;
+				/* will make cmd async */
+				prstore_update(reg, cmd);
+			} else
 				__unregister_and_clean(cmd, reg);
 		} else
 			return SAM_STAT_RESERVATION_CONFLICT;
 	} else {
 		if (force || !res_key) {
 			if (sa_res_key) {
+				int (*id)(int, uint64_t, char *, int);
+				id = tgt_drivers[cmd->dev->tgt->lid]->transportid;
+
 				reg = zalloc(sizeof(*reg));
 				if (!reg) {
 					key = ILLEGAL_REQUEST;
@@ -1324,11 +1374,21 @@ static int spc_pr_register(int host_no, struct scsi_cmd *cmd)
 					goto sense;
 				}
 
-				reg->key = sa_res_key;
+				if (id)
+					reg->st.ilen = id(cmd->dev->tgt->tid,
+							cmd->cmd_itn_id,
+							reg->st.iname,
+							sizeof(reg->st.iname));
+
+				reg->st.key = sa_res_key;
 				reg->nexus_id = cmd->cmd_itn_id;
 				reg->ctime = cmd->it_nexus->ctime;
+				reg->slot = -1;
 				list_add_tail(&reg->registration_siblings,
 					      &cmd->dev->registration_list);
+
+				/* will make cmd async */
+				prstore_update(reg, cmd);
 			} else
 				; /* do nothing */
 		} else
@@ -1374,7 +1434,7 @@ static int spc_pr_reserve(int host_no, struct scsi_cmd *cmd)
 	if (pr_scope != PR_LU_SCOPE)
 		goto sense;
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (!reg)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
@@ -1383,16 +1443,18 @@ static int spc_pr_reserve(int host_no, struct scsi_cmd *cmd)
 		if (!is_pr_holder(cmd->dev, reg))
 			return SAM_STAT_RESERVATION_CONFLICT;
 
-		if (holder->pr_type != pr_type ||
-		    holder->pr_scope != pr_scope)
+		if (holder->st.pr_type != pr_type ||
+		    holder->st.pr_scope != pr_scope)
 			return SAM_STAT_RESERVATION_CONFLICT;
 
 		return SAM_STAT_GOOD;
 	}
 
-	reg->pr_scope = pr_scope;
-	reg->pr_type = pr_type;
+	reg->st.pr_scope = pr_scope;
+	reg->st.pr_type = pr_type;
 	cmd->dev->pr_holder = reg;
+	/* will make cmd async */
+	prstore_update(reg, cmd);
 
 	return SAM_STAT_GOOD;
 sense:
@@ -1422,7 +1484,7 @@ static int spc_pr_release(int host_no, struct scsi_cmd *cmd)
 
 	res_key = get_unaligned_be64(buf);
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (!reg)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
@@ -1433,17 +1495,19 @@ static int spc_pr_release(int host_no, struct scsi_cmd *cmd)
 	if (!is_pr_holder(cmd->dev, reg))
 		return SAM_STAT_GOOD;
 
-	if (res_key != reg->key)
+	if (res_key != reg->st.key)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
-	if (holder->pr_scope != pr_scope || holder->pr_type != pr_type) {
+	if (holder->st.pr_scope != pr_scope || holder->st.pr_type != pr_type) {
 		asc = ASC_INVALID_RELEASE_OF_PERSISTENT_RESERVATION;
 		goto sense;
 	}
 
 	cmd->dev->pr_holder = NULL;
-	reg->pr_scope = 0;
-	reg->pr_type = 0;
+	reg->st.pr_scope = 0;
+	reg->st.pr_type = 0;
+	/* will make cmd async */
+	prstore_update(reg, cmd);
 
 	switch (pr_type) {
 	case PR_TYPE_WRITE_EXCLUSIVE_REGONLY:
@@ -1489,17 +1553,17 @@ static int spc_pr_clear(int host_no, struct scsi_cmd *cmd)
 
 	res_key = get_unaligned_be64(buf);
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (!reg)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
-	if (reg->key != res_key)
+	if (reg->st.key != res_key)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
 	holder = cmd->dev->pr_holder;
 	if (holder) {
-		holder->pr_scope = 0;
-		holder->pr_type = 0;
+		holder->st.pr_scope = 0;
+		holder->st.pr_type = 0;
 		cmd->dev->pr_holder = NULL;
 	}
 
@@ -1544,11 +1608,11 @@ static int spc_pr_preempt(int host_no, struct scsi_cmd *cmd)
 	res_key = get_unaligned_be64(buf);
 	sa_res_key = get_unaligned_be64(buf + 8);
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (!reg)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
-	if (reg->key != res_key)
+	if (reg->st.key != res_key)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
 	if (sa_res_key) {
@@ -1560,25 +1624,25 @@ static int spc_pr_preempt(int host_no, struct scsi_cmd *cmd)
 	holder = cmd->dev->pr_holder;
 
 	if (holder) {
-		if (holder->pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
-			holder->pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG) {
+		if (holder->st.pr_type == PR_TYPE_WRITE_EXCLUSIVE_ALLREG ||
+			holder->st.pr_type == PR_TYPE_EXCLUSIVE_ACCESS_ALLREG) {
 
 			if (!sa_res_key) {
-				if (pr_type != holder->pr_type ||
-					pr_scope != holder->pr_scope)
+				if (pr_type != holder->st.pr_type ||
+					pr_scope != holder->st.pr_scope)
 					res_released = 1;
-				reg->pr_type = pr_type;
-				reg->pr_scope = pr_scope;
+				reg->st.pr_type = pr_type;
+				reg->st.pr_scope = pr_scope;
 				cmd->dev->pr_holder = reg;
 				remove_all_reg = 1;
 			}
 		} else {
-			if (holder->key == sa_res_key) {
-				if ((pr_type != holder->pr_type) ||
-					(pr_scope != holder->pr_scope))
+			if (holder->st.key == sa_res_key) {
+				if ((pr_type != holder->st.pr_type) ||
+					(pr_scope != holder->st.pr_scope))
 					res_released = 1;
-				reg->pr_type = pr_type;
-				reg->pr_scope = pr_scope;
+				reg->st.pr_type = pr_type;
+				reg->st.pr_scope = pr_scope;
 				cmd->dev->pr_holder = reg;
 			} else {
 				if (!sa_res_key)
@@ -1592,10 +1656,10 @@ static int spc_pr_preempt(int host_no, struct scsi_cmd *cmd)
 		if (sibling == reg)
 			continue;
 
-		if (sibling->key == sa_res_key || remove_all_reg) {
+		if (sibling->st.key == sa_res_key || remove_all_reg) {
 			ua_sense_add_it_nexus(sibling->nexus_id,
 				cmd->dev, ASC_RESERVATIONS_PREEMPTED);
-			__unregister(cmd->dev, sibling);
+			__unregister(cmd, sibling);
 		} else {
 			if (res_released)
 				ua_sense_add_it_nexus(sibling->nexus_id,
@@ -1648,7 +1712,7 @@ static int spc_pr_register_and_move(int host_no, struct scsi_cmd *cmd)
 	if (param_list_len - 24 < tpid_data_len)
 		goto sense;
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 	if (!reg) {
 		if (cmd->dev->pr_holder)
 			return SAM_STAT_RESERVATION_CONFLICT;
@@ -1659,7 +1723,7 @@ static int spc_pr_register_and_move(int host_no, struct scsi_cmd *cmd)
 	if (!is_pr_holder(cmd->dev, reg))
 		return SAM_STAT_GOOD;
 
-	if (reg->key != res_key)
+	if (reg->st.key != res_key)
 		return SAM_STAT_RESERVATION_CONFLICT;
 
 	if (!sa_res_key)
@@ -1667,7 +1731,7 @@ static int spc_pr_register_and_move(int host_no, struct scsi_cmd *cmd)
 
 	list_for_each_entry(dst, &cmd->dev->registration_list,
 			    registration_siblings)
-		if (dst->key == sa_res_key)
+		if (dst->st.key == sa_res_key)
 			goto found;
 
 	/* we can't find the destination */
@@ -1684,7 +1748,7 @@ found:
 	cmd->dev->pr_holder = dst;
 
 	if (unreg)
-		__unregister(cmd->dev, reg);
+		__unregister(cmd, reg);
 
 	cmd->dev->prgeneration++;
 	return SAM_STAT_GOOD;
@@ -1717,12 +1781,12 @@ int spc_access_check(struct scsi_cmd *cmd)
 	if (!cmd->dev->pr_holder)
 		return 0;
 
-	reg = lookup_registration_by_nexus(cmd->dev, cmd->it_nexus);
+	reg = lookup_registration_by_nexus_or_iname(cmd->dev, cmd->it_nexus);
 
 	if (reg && is_pr_holder(cmd->dev, reg))
 		return 0;
 
-	pr_type = cmd->dev->pr_holder->pr_type;
+	pr_type = cmd->dev->pr_holder->st.pr_type;
 	bits = cmd->dev->dev_type_template.ops[op].pr_conflict_bits;
 
 	if (pr_type == PR_TYPE_EXCLUSIVE_ACCESS)
@@ -2115,6 +2179,9 @@ int spc_lu_init(struct scsi_lu *lu)
 
 	lu->dev_type_template.lu_offline(lu);
 
+	if (prstore_open(lu))
+		return -ENOMEM;
+
 	return 0;
 }
 
@@ -2135,4 +2202,6 @@ void spc_lu_exit(struct scsi_lu *lu)
 		list_del(&pg->mode_pg_siblings);
 		free(pg);
 	}
+
+	prstore_close(lu);
 }

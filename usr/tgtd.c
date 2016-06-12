@@ -42,6 +42,7 @@
 #include "driver.h"
 #include "work.h"
 #include "util.h"
+#include "prstore.h"
 
 unsigned long pagesize, pageshift;
 
@@ -621,7 +622,11 @@ int main(int argc, char **argv)
 	sd_notify(0, "READY=1\nSTATUS=Starting event loop...");
 #endif
 
+	prstore_engine_init();
+
 	event_loop();
+
+	prstore_engine_deinit();
 
 	lld_exit();
 
