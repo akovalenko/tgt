@@ -21,6 +21,7 @@
  * 02110-1301 USA
  */
 #include <stdlib.h>
+#include "pcs_malloc.h"
 #include <stdint.h>
 #include <signal.h>
 #include <sys/epoll.h>

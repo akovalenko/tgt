@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include "pcs_malloc.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>

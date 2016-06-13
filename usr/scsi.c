@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "pcs_malloc.h"
 #include <string.h>
 #include <stdint.h>
 #include <syscall.h>

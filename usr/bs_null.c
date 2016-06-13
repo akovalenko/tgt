@@ -23,7 +23,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include "pcs_malloc.h"
 #include "list.h"
 #include "tgtd.h"
 #include "scsi.h"

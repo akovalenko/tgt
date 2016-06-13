@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "pcs_malloc.h"
 #include <unistd.h>
 #include <syslog.h>
 #include <signal.h>

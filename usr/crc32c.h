@@ -2,6 +2,7 @@
 #define _LINUX_CRC32C_H
 
 #include <stdlib.h>
+#include "pcs_malloc.h"
 #include <stdint.h>
 
 extern uint32_t crc32c_le(uint32_t crc, unsigned char const *address, size_t length);
