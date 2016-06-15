@@ -1,6 +1,8 @@
 sbindir ?= $(PREFIX)/sbin
 libdir ?= $(PREFIX)/lib/tgt
 
+COMMONLIBS=-lpcs_io
+LIBS += $(COMMONLIBS)
 ifneq ($(shell test -e /usr/include/linux/signalfd.h && echo 1),)
 CFLAGS += -DUSE_SIGNALFD
 endif
@@ -70,7 +72,7 @@ TGTADM_OBJS = tgtadm.o concat_buf.o
 TGTADM_DEP = $(TGTADM_OBJS:.o=.d)
 
 tgtadm: $(TGTADM_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(COMMONLIBS)
 
 -include $(TGTADM_DEP)
 
@@ -78,7 +80,7 @@ TGTIMG_OBJS = tgtimg.o libssc.o libcrc32c.o
 TGTIMG_DEP = $(TGTIMG_OBJS:.o=.d)
 
 tgtimg: $(TGTIMG_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(COMMONLIBS)
 
 -include $(TGTIMG_DEP)
 
