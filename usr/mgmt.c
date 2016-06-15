@@ -173,6 +173,8 @@ static tgtadm_err target_mgmt(int lld_no, struct mgmt_task *mtask)
 
 		if (!strcmp(mtask->req_buf, "state")) {
 			adm_err = tgt_set_target_state(req->tid, p);
+		} else if (!strcmp(mtask->req_buf, "pr_dir")) {
+			adm_err = tgt_set_target_pr_dir(req->tid, p);
 		} else if (tgt_drivers[lld_no]->update)
 			adm_err = tgt_drivers[lld_no]->update(req->mode, req->op, req->tid,
 							  req->sid, req->lun,

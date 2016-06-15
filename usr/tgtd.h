@@ -4,6 +4,7 @@
 #include "log.h"
 #include "scsi_cmnd.h"
 #include "tgtadm_error.h"
+#include "prstore.h"
 
 struct concat_buf;
 
@@ -180,14 +181,23 @@ struct mode_pg {
 	uint8_t mode_data[0];	/* Rest of mode page info */
 };
 
-struct registration {
+struct stored_registration {
 	uint64_t key;
-	uint64_t nexus_id;
-	long ctime;
-	struct list_head registration_siblings;
+	/* iSCSI names must be 223 bytes or less
+	 * according to RFC 3270 section 3.2.6.1 */
+	char iname[240];
+	uint8_t ilen;
 
 	uint8_t pr_scope;
 	uint8_t pr_type;
+} __attribute__ ((aligned(256)));
+
+struct registration {
+	struct stored_registration st;
+	int slot;
+	uint64_t nexus_id;
+	long ctime;
+	struct list_head registration_siblings;
 };
 
 struct scsi_lu {
@@ -223,6 +233,7 @@ struct scsi_lu {
 	struct list_head registration_list;
 	uint32_t prgeneration;
 	struct registration *pr_holder;
+	struct pr_store prs;
 
 	/* A pointer for each modules private use.
 	 * Currently used by ssc, smc and mmc modules.
@@ -336,6 +347,7 @@ extern const unsigned char *get_scsi_cdb_usage_data(unsigned char op,
 
 extern enum scsi_target_state tgt_get_target_state(int tid);
 extern tgtadm_err tgt_set_target_state(int tid, char *str);
+extern tgtadm_err tgt_set_target_pr_dir(int tid, char *str);
 
 extern tgtadm_err acl_add(int tid, char *address);
 extern tgtadm_err acl_del(int tid, char *address);

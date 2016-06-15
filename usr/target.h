@@ -43,6 +43,8 @@ struct target {
 	struct tgt_account account;
 
 	struct list_head lld_siblings;
+
+	char *pr_dir;
 };
 
 struct it_nexus {

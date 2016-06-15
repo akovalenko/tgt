@@ -43,6 +43,7 @@
 #include "driver.h"
 #include "work.h"
 #include "util.h"
+#include "prstore.h"
 #include "mdebug.h"
 
 unsigned long pagesize, pageshift;
@@ -623,7 +624,11 @@ int main(int argc, char **argv)
 
 	bs_init();
 
+	prstore_engine_init();
+
 	event_loop();
+
+	prstore_engine_deinit();
 
 	lld_exit();
 
