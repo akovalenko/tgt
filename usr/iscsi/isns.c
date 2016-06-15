@@ -998,7 +998,7 @@ int isns_init(void)
 	memcpy(&ss, res->ai_addr, sizeof(*res->ai_addr));
 	freeaddrinfo(res);
 
-	rxbuf = calloc(2, BUFSIZE);
+	rxbuf = pcs_calloc(2, BUFSIZE);
 	if (!rxbuf) {
 		eprintf("oom\n");
 		return -1;

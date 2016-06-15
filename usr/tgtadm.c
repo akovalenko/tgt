@@ -284,7 +284,7 @@ retry:
 	if (!len)
 		return 0;
 
-	buf = malloc(len);
+	buf = pcs_malloc(len);
 	if (!buf) {
 		fprintf(stderr, "failed to allocate %d bytes", len);
 		return -ENOMEM;
