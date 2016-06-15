@@ -577,7 +577,7 @@ static void iscsi_tcp_free_task(struct iscsi_task *task)
 
 static void *valloc0(size_t sz)
 {
-	void *ptr = malloc(sz+pagesize+sizeof(void*));
+	void *ptr = pcs_malloc(sz+pagesize+sizeof(void*));
 	if (ptr) {
 		uintptr_t uiblk = (uintptr_t)ptr;
 		uintptr_t uidata = (((uiblk+sizeof(void*))-1)|(pagesize-1))+1;
@@ -590,7 +590,7 @@ static void *valloc0(size_t sz)
 
 static void vfree0(void *buf) {
 	if (buf)
-		free(*(void**)((uintptr_t)buf - sizeof(void*)));
+		pcs_free(*(void**)((uintptr_t)buf - sizeof(void*)));
 }
 
 static void *iscsi_tcp_alloc_data_buf(struct iscsi_connection *conn, size_t sz)
