@@ -43,6 +43,7 @@
 #include "driver.h"
 #include "work.h"
 #include "util.h"
+#include "mdebug.h"
 
 unsigned long pagesize, pageshift;
 
@@ -616,6 +617,10 @@ int main(int argc, char **argv)
 	if (err)
 		exit(1);
 
+        err = mdebug_start();
+        if (err)
+		exit(1);
+
 	bs_init();
 
 	event_loop();
@@ -625,6 +630,8 @@ int main(int argc, char **argv)
 	work_timer_stop();
 
 	ipc_exit();
+
+	mdebug_stop();
 
 	log_close();
 

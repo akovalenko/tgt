@@ -31,7 +31,7 @@
 #include "tgtd.h"
 #include "util.h"
 
-static LIST_HEAD(sessions_list);
+LIST_HEAD(sessions_list);
 
 struct iscsi_session *session_find_name(int tid, const char *iname, uint8_t *isid)
 {
