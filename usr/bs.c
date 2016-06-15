@@ -292,7 +292,7 @@ static int bs_init_signalfd(void)
 				eprintf("failed to dlopen backing-store "
 					"module %s error %s \n",
 					soname, dlerror());
-				free(soname);
+				pcs_native_free(soname);
 				continue;
 			}
 			register_bs_module = dlsym(handle, "register_bs_module");
@@ -300,11 +300,11 @@ static int bs_init_signalfd(void)
 				eprintf("could not find register_bs_module "
 					"symbol in module %s\n",
 					soname);
-				free(soname);
+				pcs_native_free(soname);
 				continue;
 			}
 			register_bs_module();
-			free(soname);
+			pcs_native_free(soname);
 		}
 		closedir(dir);
 	}
