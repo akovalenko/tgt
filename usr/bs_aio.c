@@ -79,6 +79,7 @@ struct bs_aio_info {
 	struct list_head sync_done;
 	pthread_mutex_t sync_done_lock;
 	int evt_sync_done;
+	int isblk;
 };
 
 static struct list_head bs_aio_dev_list = LIST_HEAD_INIT(bs_aio_dev_list);
@@ -385,6 +386,16 @@ retry_getevts:
 	}
 }
 
+static int bs_aio_isblk(int fd)
+{
+	struct stat buf;
+	if (fstat(fd,&buf)==0) {
+		return S_ISBLK(buf.st_mode);
+	} else {
+		return 0;
+	}
+}
+
 static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 {
 	struct bs_aio_info *info = BS_AIO_I(lu);
@@ -456,6 +467,8 @@ static int bs_aio_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
 	if (!lu->attrs.no_auto_lbppbe)
 		update_lbppbe(lu, blksize);
 
+	info->isblk = bs_aio_isblk(*fd);
+
 	return 0;
 
 remove_tgt_evt_sfd:
@@ -482,6 +495,16 @@ static void mutex_cleanup(void *mutex)
 	pthread_mutex_unlock(mutex);
 }
 
+static int bs_aio_unmap_region(struct scsi_lu *dev, 
+			       uint64_t offset, uint32_t tl)
+{
+	int fd = dev->fd;
+	int isblk = BS_AIO_I(dev)->isblk;
+	return isblk ?
+		unmap_device_region(fd,offset,tl)
+		: unmap_file_region(fd,offset,tl);
+}
+
 static void bs_aio_thread_request(struct scsi_cmd *cmd)
 {
 	int ret, fd = cmd->dev->fd;
@@ -503,7 +526,7 @@ static void bs_aio_thread_request(struct scsi_cmd *cmd)
 	case WRITE_SAME_16:
 		/* WRITE_SAME used to punch hole in file */
 		if (cmd->scb[1] & 0x08) {
-			ret = unmap_file_region(fd, offset, tl);
+			ret = bs_aio_unmap_region(cmd->dev, offset, tl);
 			if (ret != 0) {
 				eprintf("Failed to punch hole for WRITE_SAME"
 					" command\n");
@@ -569,7 +592,7 @@ static void bs_aio_thread_request(struct scsi_cmd *cmd)
 			}
 
 			if (tl > 0) {
-				if (unmap_file_region(fd, offset, tl) != 0) {
+				if (bs_aio_unmap_region(cmd->dev, offset, tl) != 0) {
 					eprintf("Failed to punch hole for"
 						" UNMAP at offset:%" PRIu64
 						" length:%d\n",

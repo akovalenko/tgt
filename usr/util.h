@@ -15,8 +15,13 @@
 #include <string.h>
 #include <limits.h>
 #include <linux/types.h>
-
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 #include "be_byteshift.h"
+
+#ifndef BLKDISCARD
+# define BLKDISCARD	_IO(0x12,119)
+#endif
 
 #define roundup(x, y) ((((x) + ((y) - 1)) / (y)) * (y))
 #define DIV_ROUND_UP(x, y) (((x) + (y) - 1) / (y))
@@ -218,6 +223,12 @@ static inline int unmap_file_region(int fd, off_t offset, off_t length)
 		return 0;
 #endif
 	return -1;
+}
+
+static inline int unmap_device_region(int fd, off_t offset, off_t length)
+{
+	uint64_t range[2] = {offset, length};
+	return ioctl(fd,BLKDISCARD,&range);
 }
 
 #define BITS_PER_LONG __WORDSIZE
