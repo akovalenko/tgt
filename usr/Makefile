@@ -61,6 +61,8 @@ TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 		ssc.o libssc.o bs_rdwr.o bs_ssc.o \
 		bs_null.o bs_sg.o bs.o libcrc32c.o bs_sheepdog.o
 
+TGTD_OBJS += xlog.o
+LIBS += -lz
 TGTD_DEP = $(TGTD_OBJS:.o=.d)
 
 LDFLAGS = -Wl,-E,-rpath=$(libdir)
