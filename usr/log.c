@@ -261,10 +261,20 @@ static int log_dequeue(void *buff)
 static void log_syslog (void * buff)
 {
 	struct logmsg * msg = (struct logmsg *)buff;
+	char* str = (char *)&msg->str;
+	size_t width = strlen(str);
+	char buf[MAX_MSG_SIZE];
+
 	if (use_syslog)
-		syslog(msg->prio, "%s", (char *)&msg->str);
-	if (use_pcslog)
-		pcs_log(XLOG_WARN,"%s", (char *)&msg->str);
+		syslog(msg->prio, "%s", str);
+	if (use_pcslog) {
+		if (width && (str[width-1]=='\n')) {
+			strcpy(buf,str);
+			buf[width-1]=0;
+			str = buf;
+		}
+		pcs_log(XLOG_WARN,"%s", str);
+	}
 }
 
 static void dolog(int prio, const char *fmt, va_list ap)

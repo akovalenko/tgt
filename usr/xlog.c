@@ -949,6 +949,20 @@ static void describe_signal(int sig, siginfo_t *info, void *pc)
 	}
 }
 
+#ifdef __linux__
+#define HAVE_REGISTER_GET_PC
+static inline void *register_get_pc(ucontext_t *context)
+{
+#if defined(__x86_64__)
+	return (void*) ((ucontext_t*)context)->uc_mcontext.gregs[REG_RIP];
+#elif defined(__i386__)
+	return (void*) ((ucontext_t*)context)->uc_mcontext.gregs[REG_EIP];
+#else
+	return NULL;
+#endif
+}
+#endif
+
 /* This signal handler expects that it is registered using sigaction() with
  * flags field set to SA_NODEFER | SA_RESETHAND | SA_SIGINFO.
  * Due to SA_RESETHAND the signal action is restored to the default upon
@@ -966,7 +980,7 @@ void pcs_log_fatal_sighandler(int sig, siginfo_t *info, void *context)
 
 	struct log_buff *b = flush_full_buffers();
 
-	describe_signal(sig, info, 0);
+	describe_signal(sig, info, register_get_pc(context));
 
 	flush_log_buffer(b);
 }
