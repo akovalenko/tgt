@@ -90,6 +90,13 @@ static int iscsi_send_ping_nop_in(struct iscsi_tcp_connection *tcp_conn)
 	return 0;
 }
 
+void mdebug_map_tcp_iscsi_conn(void (*fn)(struct iscsi_connection *conn)) {
+	struct iscsi_tcp_connection *tcp_conn;
+	list_for_each_entry(tcp_conn, &iscsi_tcp_conn_list, tcp_conn_siblings) {
+		fn(&tcp_conn->iscsi_conn);
+	}
+}
+
 static void iscsi_tcp_nop_work_handler(void *data)
 {
 	struct iscsi_tcp_connection *tcp_conn;
