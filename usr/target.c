@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -153,7 +154,7 @@ int ua_sense_del(struct scsi_cmd *cmd, int del)
 		 */
 		if (del) {
 			list_del(&uas->ua_sense_siblings);
-			free(uas);
+			md_free(uas);
 		}
 	}
 
@@ -175,7 +176,7 @@ void ua_sense_clear(struct it_nexus_lu_info *itn_lu, uint16_t asc)
 		if ((src[0] == ((asc >> 8) & 0xff)) &&
 		    (src[1] == (asc & 0xff))) {
 			list_del(&uas->ua_sense_siblings);
-			free(uas);
+			md_free(uas);
 		}
 	}
 }
@@ -189,7 +190,7 @@ static void ua_sense_pending_del(struct it_nexus_lu_info *itn_lu)
 				       struct ua_sense,
 				       ua_sense_siblings);
 		list_del(&uas->ua_sense_siblings);
-		free(uas);
+		md_free(uas);
 	}
 }
 
@@ -206,7 +207,7 @@ static void it_nexus_del_lu_info(struct it_nexus *itn)
 
 		list_del(&itn_lu->itn_itl_info_siblings);
 		list_del(&itn_lu->lu_itl_info_siblings);
-		free(itn_lu);
+		md_free(itn_lu);
 	}
 }
 
@@ -322,7 +323,7 @@ int it_nexus_create(int tid, uint64_t itn_id, int host_no, char *info)
 
 		ret = ua_sense_add(itn_lu, ASC_POWERON_RESET);
 		if (ret) {
-			free(itn_lu);
+			md_free(itn_lu);
 			goto out;
 		}
 
@@ -340,7 +341,7 @@ int it_nexus_create(int tid, uint64_t itn_id, int host_no, char *info)
 	return 0;
 out:
 	it_nexus_del_lu_info(itn);
-	free(itn);
+	md_free(itn);
 	return -ENOMEM;
 }
 
@@ -366,7 +367,7 @@ int it_nexus_destroy(int tid, uint64_t itn_id)
 	it_nexus_del_lu_info(itn);
 
 	list_del(&itn->nexus_siblings);
-	free(itn);
+	md_free(itn);
 	return 0;
 }
 
@@ -415,20 +416,20 @@ tgtadm_err tgt_device_path_update(struct target *target, struct scsi_lu *lu,
 			return ret;
 
 		lu->bst->bs_close(lu);
-		free(lu->path);
+		md_free(lu->path);
 		lu->fd = 0;
 		lu->addr = 0;
 		lu->size = 0;
 		lu->path = NULL;
 	}
 
-	path = strdup(path);
+	path = md_strdup(path);
 	if (!path)
 		return TGTADM_NOMEM;
 
 	err = lu->bst->bs_open(lu, path, &dev_fd, &size);
 	if (err) {
-		free(path);
+		md_free(path);
 		return TGTADM_INVALID_REQUEST;
 	}
 
@@ -696,20 +697,20 @@ tgtadm_err tgt_device_create(int tid, int dev_type, uint64_t lun, char *params,
 	dprintf("Add a logical unit %" PRIu64 " to the target %d\n", lun, tid);
 out:
 	if (bstype)
-		free(bstype);
+		md_free(bstype);
 	if (blocksize)
-		free(blocksize);
+		md_free(blocksize);
 	if (path)
-		free(path);
+		md_free(path);
 	if (bsoflags)
-		free(bsoflags);
+		md_free(bsoflags);
 	return adm_err;
 
 fail_bs_init:
 	if (lu->bst->bs_exit)
 		lu->bst->bs_exit(lu);
 fail_lu_init:
-	free(lu);
+	md_free(lu);
 	goto out;
 }
 
@@ -741,7 +742,7 @@ tgtadm_err tgt_device_destroy(int tid, uint64_t lun, int force)
 		lu->dev_type_template.lu_exit(lu);
 
 	if (lu->path) {
-		free(lu->path);
+		md_free(lu->path);
 		lu->bst->bs_close(lu);
 	}
 
@@ -756,7 +757,7 @@ tgtadm_err tgt_device_destroy(int tid, uint64_t lun, int force)
 
 				list_del(&itn_lu->itn_itl_info_siblings);
 				list_del(&itn_lu->lu_itl_info_siblings);
-				free(itn_lu);
+				md_free(itn_lu);
 				break;
 			}
 		}
@@ -766,10 +767,10 @@ tgtadm_err tgt_device_destroy(int tid, uint64_t lun, int force)
 
 	list_for_each_entry_safe(reg, reg_next, &lu->registration_list,
 				 registration_siblings) {
-		free(reg);
+		md_free(reg);
 	}
 
-	free(lu);
+	md_free(lu);
 
 	list_for_each_entry(itn, &target->it_nexus_list, nexus_siblings) {
 		list_for_each_entry(itn_lu, &itn->itn_itl_info_list,
@@ -848,7 +849,7 @@ tgtadm_err dtd_load_unload(int tid, uint64_t lun, int load, char *file)
 
 	if (lu->path) {
 		lu->bst->bs_close(lu);
-		free(lu->path);
+		md_free(lu->path);
 		lu->path = NULL;
 	}
 
@@ -860,12 +861,12 @@ tgtadm_err dtd_load_unload(int tid, uint64_t lun, int load, char *file)
 		return adm_err;
 
 	if (load) {
-		lu->path = strdup(file);
+		lu->path = md_strdup(file);
 		if (!lu->path)
 			return TGTADM_NOMEM;
 		lu->bst->bs_open(lu, file, &lu->fd, &lu->size);
 		if (lu->fd < 0) {
-			free(lu->path);
+			md_free(lu->path);
 			lu->path = NULL;
 			return TGTADM_UNSUPPORTED_OPERATION;
 		}
@@ -1310,7 +1311,7 @@ void target_cmd_done(struct scsi_cmd *cmd)
 	if (mreq && !--mreq->busy) {
 		mreq->result = mreq->function == ABORT_TASK ? -EEXIST : 0;
 		tgt_drivers[cmd->c_target->lid]->mgmt_end_notify(mreq);
-		free(mreq);
+		md_free(mreq);
 	}
 
 	cmd->dev->cmd_done(cmd->c_target, cmd);
@@ -1460,7 +1461,7 @@ enum mgmt_req_result target_mgmt_request(int tid, uint64_t itn_id,
 	if (send) {
 		mreq->result = err;
 		tgt_drivers[target->lid]->mgmt_end_notify(mreq);
-		free(mreq);
+		md_free(mreq);
 	}
 
 	if (err)
@@ -1555,20 +1556,20 @@ tgtadm_err account_add(char *user, char *password)
 		return TGTADM_NOMEM;
 
 	ac->aid = aid;
-	ac->user = strdup(user);
+	ac->user = md_strdup(user);
 	if (!ac->user)
 		goto free_account;
 
-	ac->password = strdup(password);
+	ac->password = md_strdup(password);
 	if (!ac->password)
 		goto free_username;
 
 	list_add(&ac->account_siblings, &account_list);
 	return 0;
 free_username:
-	free(ac->user);
+	md_free(ac->user);
 free_account:
-	free(ac);
+	md_free(ac);
 	return TGTADM_NOMEM;
 }
 
@@ -1601,7 +1602,7 @@ static tgtadm_err __inaccount_bind(struct target *target, int aid)
 
 		memcpy(buf, target->account.in_aids,
 		       target->account.max_inaccount * sizeof(int));
-		free(target->account.in_aids);
+		md_free(target->account.in_aids);
 		target->account.in_aids = buf;
 		target->account.in_aids[target->account.max_inaccount] = aid;
 		target->account.max_inaccount = new_max;
@@ -1676,9 +1677,9 @@ tgtadm_err account_del(char *user)
 	account_ctl(GLOBAL_TID, ACCOUNT_TYPE_OUTGOING, ac->user, 0);
 
 	list_del(&ac->account_siblings);
-	free(ac->user);
-	free(ac->password);
-	free(ac);
+	md_free(ac->user);
+	md_free(ac->password);
+	md_free(ac);
 	return TGTADM_SUCCESS;
 }
 
@@ -1717,9 +1718,9 @@ tgtadm_err acl_add(int tid, char *address)
 	if (!acl)
 		return TGTADM_NOMEM;
 
-	str = strdup(address);
+	str = md_strdup(address);
 	if (!str) {
-		free(acl);
+		md_free(acl);
 		return TGTADM_NOMEM;
 	}
 
@@ -1742,8 +1743,8 @@ tgtadm_err acl_del(int tid, char *address)
 	list_for_each_entry_safe(acl, tmp, &target->acl_list, aclent_list) {
 		if (!strcmp(address, acl->address)) {
 			list_del(&acl->aclent_list);
-			free(acl->address);
-			free(acl);
+			md_free(acl->address);
+			md_free(acl);
 			adm_err = TGTADM_SUCCESS;
 			break;
 		}
@@ -1789,9 +1790,9 @@ tgtadm_err iqn_acl_add(int tid, char *name)
 	if (!iqn_acl)
 		return TGTADM_NOMEM;
 
-	str = strdup(name);
+	str = md_strdup(name);
 	if (!str) {
-		free(iqn_acl);
+		md_free(iqn_acl);
 		return TGTADM_NOMEM;
 	}
 
@@ -1816,8 +1817,8 @@ tgtadm_err iqn_acl_del(int tid, char *name)
 
 		if (!strcmp(name, iqn_acl->name)) {
 			list_del(&iqn_acl->iqn_aclent_list);
-			free(iqn_acl->name);
-			free(iqn_acl);
+			md_free(iqn_acl->name);
+			md_free(iqn_acl);
 			adm_err = TGTADM_SUCCESS;
 			break;
 		}
@@ -1873,7 +1874,7 @@ tgtadm_err tgt_bind_host_to_target(int tid, int host_no)
 		}
 	}
 
-	bhost = malloc(sizeof(*bhost));
+	bhost = md_malloc(sizeof(*bhost));
 	if (!bhost)
 		return TGTADM_NOMEM;
 
@@ -1898,7 +1899,7 @@ tgtadm_err tgt_unbind_host_to_target(int tid, int host_no)
 				return TGTADM_TARGET_ACTIVE;
 			}
 			list_del(&bhost->bhost_siblings);
-			free(bhost);
+			md_free(bhost);
 			return TGTADM_SUCCESS;
 		}
 	}
@@ -2160,16 +2161,16 @@ tgtadm_err tgt_target_create(int lld, int tid, char *args)
 	if (!target)
 		return TGTADM_NOMEM;
 
-	target->name = strdup(targetname);
+	target->name = md_strdup(targetname);
 	if (!target->name) {
-		free(target);
+		md_free(target);
 		return TGTADM_NOMEM;
 	}
 
 	target->account.in_aids = zalloc(DEFAULT_NR_ACCOUNT * sizeof(int));
 	if (!target->account.in_aids) {
-		free(target->name);
-		free(target);
+		md_free(target->name);
+		md_free(target);
 		return TGTADM_NOMEM;
 	}
 	target->account.max_inaccount = DEFAULT_NR_ACCOUNT;
@@ -2238,22 +2239,22 @@ tgtadm_err tgt_target_destroy(int lld_no, int tid, int force)
 
 	list_for_each_entry_safe(acl, tmp, &target->acl_list, aclent_list) {
 		list_del(&acl->aclent_list);
-		free(acl->address);
-		free(acl);
+		md_free(acl->address);
+		md_free(acl);
 	}
 
 	list_for_each_entry_safe(iqn_acl, tmp1, &target->iqn_acl_list,
 				 iqn_aclent_list) {
 		list_del(&iqn_acl->iqn_aclent_list);
-		free(iqn_acl->name);
-		free(iqn_acl);
+		md_free(iqn_acl->name);
+		md_free(iqn_acl);
 	}
 
 	list_del(&target->lld_siblings);
 
-	free(target->account.in_aids);
-	free(target->name);
-	free(target);
+	md_free(target->account.in_aids);
+	md_free(target->name);
+	md_free(target);
 
 	return TGTADM_SUCCESS;
 }

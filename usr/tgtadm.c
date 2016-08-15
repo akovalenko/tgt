@@ -28,6 +28,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 
@@ -287,7 +288,7 @@ retry:
 	if (!len)
 		return 0;
 
-	buf = malloc(len);
+	buf = md_malloc(len);
 	if (!buf) {
 		fprintf(stderr, "failed to allocate %d bytes", len);
 		return -ENOMEM;
@@ -307,7 +308,7 @@ retry:
 
 	if (done == len)
 		fputs(buf, stdout);
-	free(buf);
+	md_free(buf);
 
 	return 0;
 }
@@ -383,8 +384,8 @@ static int bus_to_host(char *bus)
 	}
 
 	for (i = 0; i < nr; i++)
-		free(namelist[i]);
-	free(namelist);
+		md_free(namelist[i]);
+	md_free(namelist);
 
 	if (host == -1) {
 		eprintf("can't find bus: %s\n", bus);

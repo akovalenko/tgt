@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <stdarg.h>
 #include <stdint.h>
 #include <pthread.h>
@@ -486,8 +487,8 @@ static int log_worker_rotate(struct log_writer* l)
 {
 	int i, len = (int)strlen(l->fname);
 	int rc = 0;
-	char *src = (char*)malloc(len + 3);
-	char *dst = (char*)malloc(len + 3);
+	char *src = (char*)md_malloc(len + 3);
+	char *dst = (char*)md_malloc(len + 3);
 
 	/* cleanup request first */
 	l->rotate_request = 0;
@@ -512,8 +513,8 @@ static int log_worker_rotate(struct log_writer* l)
 		rc = -1;
 	}
 
-	free(src);
-	free(dst);
+	md_free(src);
+	md_free(dst);
 	return rc;
 }
 
@@ -763,7 +764,7 @@ void pcs_log_hexdump(int level, const void *buf, int olen)
 		return;
 
 	alloc_sz = len * 3 + 3 + 1;	
-	str = (char*)malloc(alloc_sz);
+	str = (char*)md_malloc(alloc_sz);
 	p = str;
 
 	*p = 0;
@@ -775,7 +776,7 @@ void pcs_log_hexdump(int level, const void *buf, int olen)
 	str[alloc_sz - 1] = 0;
 
 	pcs_log(level|LOG_NOIND, "%s", str);
-	free(str);
+	md_free(str);
 }
 
 void pcs_fatal(const char *fmt, ...)
@@ -806,7 +807,7 @@ int pcs_set_logfile(const char *path)
 	BUG_ON(logwriter);
 
 	/* Allocate context */
-	l = calloc(sizeof(*l),1);
+	l = md_calloc(sizeof(*l),1);
 
 	init_ops_generic(l);
 
@@ -817,9 +818,9 @@ int pcs_set_logfile(const char *path)
 #endif
 
 	/* Open log file */
-	l->fname = strdup(path);
+	l->fname = md_strdup(path);
 	if (l->open_log(l)) {
-		free(l);
+		md_free(l);
 		return PCS_ERR_IO;
 	}
 
@@ -1036,7 +1037,7 @@ static char *log_exit_msg_fname;
 void pcs_set_exitmsg_file(char *path)
 {
 	BUG_ON(log_exit_msg_fname);
-	log_exit_msg_fname = strdup(path);
+	log_exit_msg_fname = md_strdup(path);
 }
 
 static void pcs_valog_exitmsg(const char *fmt, va_list va)
@@ -1186,7 +1187,7 @@ static struct log_writer *open_existing(int fd, u64 size, struct log_writer *log
 		return log;
 	}
 
-	buf = malloc(LOG_BUFF_SZ);
+	buf = md_malloc(LOG_BUFF_SZ);
 
 	if (size > LOG_BUFF_SZ)
 		offs = size - LOG_BUFF_SZ;
@@ -1311,7 +1312,7 @@ static struct log_writer *open_existing(int fd, u64 size, struct log_writer *log
 	rc = log;
 
 _cleanup:
-	free(buf);
+	md_free(buf);
 	return rc;
 }
 

@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -46,13 +47,13 @@ void conn_add_to_session(struct iscsi_connection *conn, struct iscsi_session *se
 
 int conn_init(struct iscsi_connection *conn)
 {
-	conn->req_buffer = malloc(INCOMING_BUFSIZE);
+	conn->req_buffer = md_malloc(INCOMING_BUFSIZE);
 	if (!conn->req_buffer)
 		return -ENOMEM;
 
-	conn->rsp_buffer = malloc(INCOMING_BUFSIZE);
+	conn->rsp_buffer = md_malloc(INCOMING_BUFSIZE);
 	if (!conn->rsp_buffer) {
-		free(conn->req_buffer);
+		md_free(conn->req_buffer);
 		return -ENOMEM;
 	}
 	conn->rsp_buffer_size = INCOMING_BUFSIZE;
@@ -73,11 +74,11 @@ void conn_exit(struct iscsi_connection *conn)
 	struct iscsi_session *session = conn->session;
 
 	list_del(&conn->clist);
-	free(conn->req_buffer);
-	free(conn->rsp_buffer);
-	free(conn->initiator);
+	md_free(conn->req_buffer);
+	md_free(conn->rsp_buffer);
+	md_free(conn->initiator);
 	if (conn->initiator_alias)
-		free(conn->initiator_alias);
+		md_free(conn->initiator_alias);
 
 	if (session)
 		session_put(session);

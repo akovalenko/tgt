@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -195,7 +196,7 @@ int tgt_event_add(int fd, int events, event_handler_t handler, void *data)
 	err = epoll_ctl(ep_fd, EPOLL_CTL_ADD, fd, &ev);
 	if (err) {
 		eprintf("Cannot add fd, %m\n");
-		free(tev);
+		md_free(tev);
 	} else
 		list_add(&tev->e_list, &tgt_events_list);
 
@@ -231,7 +232,7 @@ void tgt_event_del(int fd)
 		eprintf("fail to remove epoll event, %s\n", strerror(errno));
 
 	list_del(&tev->e_list);
-	free(tev);
+	md_free(tev);
 
 	event_need_refresh = 1;
 }

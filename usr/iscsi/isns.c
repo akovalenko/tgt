@@ -23,6 +23,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -308,7 +309,7 @@ static int isns_eid_attr_query(void)
 		if (isns_connect() < 0)
 			return 0;
 
-	mgmt = malloc(sizeof(*mgmt));
+	mgmt = md_malloc(sizeof(*mgmt));
 	if (!mgmt)
 		return 0;
 	list_add(&mgmt->qlist, &qry_list);
@@ -356,7 +357,7 @@ static int isns_attr_query(char *name)
 		if (isns_connect() < 0)
 			return 0;
 
-	mgmt = malloc(sizeof(*mgmt));
+	mgmt = md_malloc(sizeof(*mgmt));
 	if (!mgmt)
 		return 0;
 	list_add(&mgmt->qlist, &qry_list);
@@ -514,7 +515,7 @@ static void free_all_acl(struct iscsi_target *target)
 	while (!list_empty(&target->isns_list)) {
 		ini = list_first_entry(&target->isns_list, typeof(*ini), ilist);
 		list_del(&ini->ilist);
-		free(ini);
+		md_free(ini);
 	}
 }
 
@@ -759,7 +760,7 @@ found:
 		case ISNS_ATTR_ISCSI_NODE_TYPE:
 			if (ntohl(*(tlv->value)) == ISNS_NODE_INITIATOR && name) {
 				eprintf("%s\n", (char *) name);
-				ini = malloc(sizeof(*ini));
+				ini = md_malloc(sizeof(*ini));
 				if (!ini)
 					goto free_qry_mgmt;
 				snprintf(ini->name, sizeof(ini->name), "%s", name);
@@ -787,7 +788,7 @@ found:
 		isns_timeout = reg_period - 10;
 
 free_qry_mgmt:
-	free(mgmt);
+	md_free(mgmt);
 }
 
 static void isns_handle(int fd, int events, void *data)
@@ -997,7 +998,7 @@ int isns_init(void)
 	memcpy(&ss, res->ai_addr, sizeof(*res->ai_addr));
 	freeaddrinfo(res);
 
-	rxbuf = calloc(2, BUFSIZE);
+	rxbuf = md_calloc(2, BUFSIZE);
 	if (!rxbuf) {
 		eprintf("oom\n");
 		return -1;
@@ -1084,7 +1085,7 @@ void isns_exit(void)
 	}
 
 	num_targets = use_isns = isns_fd = scn_listen_fd = scn_fd = 0;
-	free(rxbuf);
+	md_free(rxbuf);
 }
 
 tgtadm_err isns_show(struct concat_buf *b)

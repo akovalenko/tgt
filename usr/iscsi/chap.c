@@ -27,6 +27,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 
 #include "iscsid.h"
@@ -265,7 +266,7 @@ static int chap_alloc_decode_buffer(char *encoded, uint8_t **decode_buf, int enc
 	if (!decode_len)
 		return CHAP_INITIATOR_ERROR;
 
-	*decode_buf = malloc(decode_len);
+	*decode_buf = md_malloc(decode_len);
 	if (!*decode_buf)
 		return CHAP_TARGET_ERROR;
 
@@ -366,7 +367,7 @@ static int chap_initiator_auth_create_challenge(struct iscsi_connection *conn)
 	 */
 	conn->auth.chap.challenge_size = (rand() % (CHAP_CHALLENGE_MAX / 2)) + CHAP_CHALLENGE_MAX / 2;
 
-	conn->auth.chap.challenge = malloc(conn->auth.chap.challenge_size);
+	conn->auth.chap.challenge = md_malloc(conn->auth.chap.challenge_size);
 	if (!conn->auth.chap.challenge)
 		return CHAP_TARGET_ERROR;
 
@@ -436,11 +437,11 @@ static int chap_initiator_auth_check_response(struct iscsi_connection *conn)
 		goto out;
 	}
 
-	if (!(his_digest = malloc(digest_len))) {
+	if (!(his_digest = md_malloc(digest_len))) {
 		retval = CHAP_TARGET_ERROR;
 		goto out;
 	}
-	if (!(our_digest = malloc(digest_len))) {
+	if (!(our_digest = md_malloc(digest_len))) {
 		retval = CHAP_TARGET_ERROR;
 		goto out;
 	}
@@ -479,9 +480,9 @@ static int chap_initiator_auth_check_response(struct iscsi_connection *conn)
 	conn->state = CHAP_AUTH_STATE_RESPONSE;
  out:
 	if (his_digest)
-		free(his_digest);
+		md_free(his_digest);
 	if (our_digest)
-		free(our_digest);
+		md_free(our_digest);
 	return retval;
 }
 
@@ -559,11 +560,11 @@ static int chap_target_auth_create_response(struct iscsi_connection *conn)
 	//"0x" / "0b" and "\0":
 	response_len += 3;
 
-	if (!(digest = malloc(digest_len))) {
+	if (!(digest = md_malloc(digest_len))) {
 		retval = CHAP_TARGET_ERROR;
 		goto out;
 	}
-	if (!(response = malloc(response_len))) {
+	if (!(response = md_malloc(response_len))) {
 		retval = CHAP_TARGET_ERROR;
 		goto out;
 	}
@@ -608,11 +609,11 @@ static int chap_target_auth_create_response(struct iscsi_connection *conn)
 	conn->state = STATE_SECURITY_DONE;
  out:
 	if (challenge)
-		free(challenge);
+		md_free(challenge);
 	if (digest)
-		free(digest);
+		md_free(digest);
 	if (response)
-		free(response);
+		md_free(response);
 	return retval;
 }
 

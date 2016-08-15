@@ -55,6 +55,10 @@ ifneq ($(SD_NOTIFY),)
 LIBS += -lsystemd
 endif
 
+ifneq ($(MEMDEBUG),)
+CFLAGS += -DMEMDEBUG_HOOK=1
+endif
+
 PROGRAMS += tgtd tgtadm tgtimg
 TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 		concat_buf.o parser.o spc.o sbc.o mmc.o osd.o scc.o smc.o \
@@ -62,6 +66,7 @@ TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 		bs_null.o bs_sg.o bs.o libcrc32c.o bs_sheepdog.o mdebug.o
 
 TGTD_OBJS += xlog.o
+TGTD_OBJS += memdebug.o
 LIBS += -lz
 TGTD_DEP = $(TGTD_OBJS:.o=.d)
 
@@ -77,6 +82,7 @@ tgtd: $(TGTD_OBJS)
 -include $(TGTD_DEP)
 
 TGTADM_OBJS = tgtadm.o concat_buf.o
+TGTADM_OBJS += memdebug.o
 TGTADM_DEP = $(TGTADM_OBJS:.o=.d)
 
 tgtadm: $(TGTADM_OBJS)
@@ -85,6 +91,7 @@ tgtadm: $(TGTADM_OBJS)
 -include $(TGTADM_DEP)
 
 TGTIMG_OBJS = tgtimg.o libssc.o libcrc32c.o
+TGTIMG_OBJS += memdebug.o
 TGTIMG_DEP = $(TGTIMG_OBJS:.o=.d)
 
 tgtimg: $(TGTIMG_OBJS)

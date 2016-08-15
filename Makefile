@@ -9,6 +9,10 @@ PREFIX ?= /usr
 # Export VERSION and PREFIX so sub-make knows about them
 export VERSION PREFIX
 
+# Enable memory debugging
+MEMDEBUG=y
+export MEMDEBUG
+
 # Export the feature switches so sub-make knows about them
 export ISCSI_RDMA
 export CEPH_RBD

@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -128,7 +129,7 @@ static int ip_match(struct iscsi_connection *conn, char *address)
 	if (err < 0)
 		return -EPERM;
 
-	str = p = strdup(address);
+	str = p = md_strdup(address);
 	if (!p)
 		return -EPERM;
 
@@ -169,7 +170,7 @@ static int ip_match(struct iscsi_connection *conn, char *address)
 
 	freeaddrinfo(res);
 out:
-	free(str);
+	md_free(str);
 	return err;
 }
 
@@ -309,7 +310,7 @@ predefined:
 	    rsn != ISCSI_LOGIN_STATUS_TGT_MOVED_PERM)
 		return 0;
 
-	p = strdup(addr);
+	p = md_strdup(addr);
 	if (!p)
 		return 0;
 	str = p;
@@ -317,7 +318,7 @@ predefined:
 	if (*p == '[') {
 		p++;
 		if (!(q = strchr(p, ']'))) {
-			free(str);
+			md_free(str);
 			return 0;
 		}
 		*(q++) = '\0';
@@ -329,13 +330,13 @@ predefined:
 
 	ret = getaddrinfo(p, NULL, &hints, &res);
 	if (ret < 0) {
-		free(str);
+		md_free(str);
 		return 0;
 	}
 
 	ret = address_match(res->ai_addr, (struct sockaddr *)&from);
 	freeaddrinfo(res);
-	free(str);
+	md_free(str);
 
 	if (!ret) {
 		sprintf(buf, "%s:%s", addr, port);
@@ -422,8 +423,8 @@ void iscsi_target_destroy(int tid, int force)
 
 	list_del(&target->tlist);
 	if (target->redirect_info.callback)
-		free(target->redirect_info.callback);
-	free(target);
+		md_free(target->redirect_info.callback);
+	md_free(target);
 	isns_target_deregister(tgt_targetname(tid));
 
 	return;
@@ -461,7 +462,7 @@ int iscsi_target_create(struct target *t)
 		[ISCSI_PARAM_MAX_QUEUE_CMD] = {0, MAX_QUEUE_CMD_DEF},
 	};
 
-	target = malloc(sizeof(*target));
+	target = md_malloc(sizeof(*target));
 	if (!target)
 		return -ENOMEM;
 
@@ -545,7 +546,7 @@ tgtadm_err iscsi_target_update(int mode, int op, int tid, uint64_t sid, uint64_t
 			} else
 				break;
 		} else if (!strncmp(name, "RedirectCallback", 16)) {
-			target->redirect_info.callback = strdup(str);
+			target->redirect_info.callback = md_strdup(str);
 			if (!target->redirect_info.callback) {
 				adm_err = TGTADM_NOMEM;
 				break;

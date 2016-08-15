@@ -24,6 +24,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -252,7 +253,7 @@ static void accept_connection(int afd, int events, void *data)
 
 	ret = conn_init(conn);
 	if (ret) {
-		free(tcp_conn);
+		md_free(tcp_conn);
 		goto out;
 	}
 
@@ -265,7 +266,7 @@ static void accept_connection(int afd, int events, void *data)
 	ret = tgt_event_add(fd, EPOLLIN, iscsi_tcp_event_handler, conn);
 	if (ret) {
 		conn_exit(conn);
-		free(tcp_conn);
+		md_free(tcp_conn);
 		goto out;
 	}
 
@@ -382,7 +383,7 @@ int iscsi_tcp_init_portal(char *addr, int port, int tpgt)
 				    res->ai_addr)->sin6_addr;
 			break;
 		}
-		portal->addr = strdup(inet_ntop(res->ai_family, addrptr,
+		portal->addr = md_strdup(inet_ntop(res->ai_family, addrptr,
 			     addrstr, sizeof(addrstr)));
 		portal->port = port;
 		portal->tpgt = tpgt;
@@ -418,8 +419,8 @@ int iscsi_delete_portal(char *addr, int port)
 				tgt_event_del(portal->fd);
 			close(portal->fd);
 			list_del(&portal->iscsi_portal_siblings);
-			free(portal->addr);
-			free(portal);
+			md_free(portal->addr);
+			md_free(portal);
 			return 0;
 		}
 	}
@@ -525,7 +526,7 @@ static void iscsi_tcp_release(struct iscsi_connection *conn)
 	conn_exit(conn);
 	close(tcp_conn->fd);
 	list_del(&tcp_conn->tcp_conn_siblings);
-	free(tcp_conn);
+	md_free(tcp_conn);
 }
 
 static int iscsi_tcp_show(struct iscsi_connection *conn, char *buf, int rest)
@@ -570,7 +571,7 @@ static struct iscsi_task *iscsi_tcp_alloc_task(struct iscsi_connection *conn,
 {
 	struct iscsi_task *task;
 
-	task = malloc(sizeof(*task) + ext_len);
+	task = md_malloc(sizeof(*task) + ext_len);
 	if (task)
 		memset(task, 0, sizeof(*task) + ext_len);
 	return task;
@@ -578,18 +579,18 @@ static struct iscsi_task *iscsi_tcp_alloc_task(struct iscsi_connection *conn,
 
 static void iscsi_tcp_free_task(struct iscsi_task *task)
 {
-	free(task);
+	md_free(task);
 }
 
 static void *iscsi_tcp_alloc_data_buf(struct iscsi_connection *conn, size_t sz)
 {
-	return valloc(sz);
+	return md_valloc(sz);
 }
 
 static void iscsi_tcp_free_data_buf(struct iscsi_connection *conn, void *buf)
 {
 	if (buf)
-		free(buf);
+		md_free(buf);
 }
 
 static int iscsi_tcp_getsockname(struct iscsi_connection *conn,
