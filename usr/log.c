@@ -376,6 +376,14 @@ static void log_sigsegv(int signum, siginfo_t *info, void*context)
 int log_init(char *program_name, int size, int daemon, int debug)
 {
 	const char* logfile = getenv("TGT_LOG_FILE");
+	const char* s_logrotate_filenum = getenv("TGT_LOGROTATE_FILENUM");
+	const char* s_logrotate_size = getenv("TGT_LOGROTATE_SIZEMB");
+	unsigned long logrotate_filenum = s_logrotate_filenum ? strtoul(s_logrotate_filenum, NULL, 0) : 10,
+		logrotate_size = s_logrotate_size ? strtoul(s_logrotate_size, NULL, 0) : 100;
+
+	if (logrotate_filenum < 1) logrotate_filenum = 1;
+	if (logrotate_size < 1) logrotate_size = 1;
+
 	is_debug = debug;
 
 	logdbg(stderr,"enter log_init\n");
@@ -406,8 +414,8 @@ int log_init(char *program_name, int size, int daemon, int debug)
 			       "tgtd logger started, pid:%d debug:%d\n", pid, is_debug);
 			return 0;
 		}
-		pcs_set_logrotate_filenum(10);
-		pcs_set_logrotate_size(100LL*1024*1024);
+		pcs_set_logrotate_filenum(logrotate_filenum);
+		pcs_set_logrotate_size(1024ULL*1024*logrotate_size);
 
 		if (pcs_set_logfile(logfile)) {
 			syslog(LOG_ERR,"tgtd log file not opened: %s", logfile);
