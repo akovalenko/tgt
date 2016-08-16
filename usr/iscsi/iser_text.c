@@ -25,6 +25,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
@@ -436,11 +437,11 @@ static void iser_login_start(struct iscsi_connection *iscsi_conn,
 		iscsi_conn->state = STATE_EXIT;
 		return;
 	}
-	iscsi_conn->initiator = strdup(name);
+	iscsi_conn->initiator = md_strdup(name);
 
 	alias = iser_text_key_find(req_data, req_datasize, "InitiatorAlias");
 	if (alias)
-		iscsi_conn->initiator_alias = strdup(alias);
+		iscsi_conn->initiator_alias = md_strdup(alias);
 
 	session_type = iser_text_key_find(req_data, req_datasize, "SessionType");
 	target_name = iser_text_key_find(req_data, req_datasize, "TargetName");

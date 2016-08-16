@@ -26,6 +26,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
@@ -431,7 +432,7 @@ static int sbc_new(int op, char *path, char *capacity, char *media_type, int thi
 			exit(3);
 		}
 
-		buf = malloc(1024*1024);
+		buf = md_malloc(1024*1024);
 		if (buf == NULL) {
 			printf("Failed to malloc buffer\n");
 			exit(4);
@@ -458,7 +459,7 @@ static int sbc_new(int op, char *path, char *capacity, char *media_type, int thi
 			}
 		}
 
-		free(buf);
+		md_free(buf);
 		close(fd);
 
 		printf("Created blank DISK image file : %s\n", path);

@@ -31,6 +31,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -393,11 +394,11 @@ static int smc_read_element_status(int host_no, struct scsi_cmd *cmd)
 	len = element_status_data_hdr(data, dvcid, voltag, first, count);
 	memcpy(scsi_get_in_buffer(cmd), data, min(len, alloc_len));
 	scsi_set_in_resid_by_actual(cmd, len);
-	free(data);
+	md_free(data);
 	return SAM_STAT_GOOD;
 sense:
 	if (data)
-		free(data);
+		md_free(data);
 	scsi_set_in_resid_by_actual(cmd, 0);
 	sense_data_build(cmd, key, asc);
 	return SAM_STAT_CHECK_CONDITION;
@@ -558,7 +559,7 @@ static void smc_lu_exit(struct scsi_lu *lu)
 
 	dprintf("Medium Changer shutdown() called\n");
 
-	free(smc);
+	md_free(smc);
 }
 
 static tgtadm_err slot_insert(struct list_head *head, int element_type, int address)
@@ -583,7 +584,7 @@ static tgtadm_err slot_insert(struct list_head *head, int element_type, int addr
 static void slot_remove(struct slot *s)
 {
 	list_del(&s->slot_siblings);
-	free(s);
+	md_free(s);
 }
 
 /**
@@ -811,9 +812,9 @@ static tgtadm_err __smc_lu_config(struct scsi_lu *lu, char *params)
 			break;
 		case Opt_media_home:
 			if (smc->media_home)
-				free(smc->media_home);
+				md_free(smc->media_home);
 			match_strncpy(buf, &args[0], sizeof(buf));
-			smc->media_home = strdup(buf);
+			smc->media_home = md_strdup(buf);
 			if (!smc->media_home)
 				adm_err = TGTADM_NOMEM;
 			break;

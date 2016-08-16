@@ -1,4 +1,4 @@
-VERSION ?= 1.0.64
+VERSION ?= 1.0.66
 
 CHECK_CC = cgcc
 CHECK_CC_FLAGS = '$(CHECK_CC) -Wbitwise -Wno-return-void -no-compile $(ARCH)'
@@ -8,6 +8,10 @@ PREFIX ?= /usr
 
 # Export VERSION and PREFIX so sub-make knows about them
 export VERSION PREFIX
+
+# Enable memory debugging
+MEMDEBUG=y
+export MEMDEBUG
 
 # Export the feature switches so sub-make knows about them
 export ISCSI_RDMA

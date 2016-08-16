@@ -21,6 +21,7 @@
  * 02110-1301 USA
  */
 #include <stdlib.h>
+#include "memdebug.h"
 #include <stdint.h>
 #include <signal.h>
 #include <sys/epoll.h>

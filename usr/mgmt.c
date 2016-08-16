@@ -26,6 +26,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
@@ -597,9 +598,9 @@ static void mtask_free(struct mgmt_task *mtask)
 	dprintf("mtask:%p\n", mtask);
 
 	if (mtask->req_buf)
-		free(mtask->req_buf);
+		md_free(mtask->req_buf);
 	concat_buf_release(&mtask->rsp_concat);
-	free(mtask);
+	md_free(mtask);
 }
 
 static int mtask_received(struct mgmt_task *mtask, int fd)

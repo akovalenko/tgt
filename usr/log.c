@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <unistd.h>
 #include <syslog.h>
 #include <signal.h>
@@ -32,6 +33,7 @@
 #include <sys/prctl.h>
 
 #include "log.h"
+#include "xlog.h"
 
 #define LOGDBG 0
 
@@ -44,6 +46,7 @@
 static struct logarea *la;
 static char *log_name;
 int is_debug = 0;
+static int use_syslog = 1, use_pcslog = 0;
 static pid_t pid;
 
 static int logarea_init (int size)
@@ -259,8 +262,20 @@ static int log_dequeue(void *buff)
 static void log_syslog (void * buff)
 {
 	struct logmsg * msg = (struct logmsg *)buff;
+	char* str = (char *)&msg->str;
+	size_t width = strlen(str);
+	char buf[MAX_MSG_SIZE];
 
-	syslog(msg->prio, "%s", (char *)&msg->str);
+	if (use_syslog)
+		syslog(msg->prio, "%s", str);
+	if (use_pcslog) {
+		if (width && (str[width-1]=='\n')) {
+			strcpy(buf,str);
+			buf[width-1]=0;
+			str = buf;
+		}
+		pcs_log(XLOG_WARN,"%s", str);
+	}
 }
 
 static void dolog(int prio, const char *fmt, va_list ap)
@@ -345,10 +360,14 @@ static void log_flush(void)
 	}
 }
 
-static void log_sigsegv(void)
+void pcs_log_fatal_sighandler(int sig, siginfo_t *info, void *context);
+
+static void log_sigsegv(int signum, siginfo_t *info, void*context)
 {
 	log_error("tgtd logger exits abnormally, pid:%d\n", getpid());
 	log_flush();
+	if (use_pcslog)
+		pcs_log_fatal_sighandler(signum,info,context);
 	closelog();
 	free_logarea();
 	exit(1);
@@ -356,11 +375,13 @@ static void log_sigsegv(void)
 
 int log_init(char *program_name, int size, int daemon, int debug)
 {
+	const char* logfile = getenv("TGT_LOG_FILE");
 	is_debug = debug;
 
 	logdbg(stderr,"enter log_init\n");
 	log_name = program_name;
-
+	
+	if (!logfile) logfile = "/var/log/tgtd.gz";
 	if (daemon) {
 		struct sigaction sa_old;
 		struct sigaction sa_new;
@@ -385,18 +406,27 @@ int log_init(char *program_name, int size, int daemon, int debug)
 			       "tgtd logger started, pid:%d debug:%d\n", pid, is_debug);
 			return 0;
 		}
+		pcs_set_logrotate_filenum(10);
+		pcs_set_logrotate_size(100LL*1024*1024);
+
+		if (pcs_set_logfile(logfile)) {
+			syslog(LOG_ERR,"tgtd log file not opened: %s", logfile);
+		} else {
+			use_pcslog = 1;
+			use_syslog = 0;
+		}
 
 		/* flush on daemon's crash */
-		sa_new.sa_handler = (void*)log_sigsegv;
+		sa_new.sa_sigaction = (void*)log_sigsegv;
 		sigemptyset(&sa_new.sa_mask);
-		sa_new.sa_flags = 0;
+		sa_new.sa_flags = SA_SIGINFO;
 		sigaction(SIGSEGV, &sa_new, &sa_old );
 
 		prctl(PR_SET_PDEATHSIG, SIGSEGV);
 
 		while (la->active) {
 			log_flush();
-			sleep(1);
+			sleep(10);
 		}
 
 		exit(0);

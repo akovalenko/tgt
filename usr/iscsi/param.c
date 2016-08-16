@@ -21,6 +21,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
+#include "memdebug.h"
 
 #include "iscsid.h"
 

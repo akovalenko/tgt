@@ -91,7 +91,7 @@ void concat_buf_release(struct concat_buf *b)
 {
 	concat_buf_finish(b);
 	if (b->buf) {
-		free(b->buf);
+		md_free(b->buf);
 		memset(b, 0, sizeof(*b));
 	}
 }

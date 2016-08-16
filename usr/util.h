@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <limits.h>
 #include <linux/types.h>
@@ -78,7 +79,7 @@ extern int spc_memcpy(uint8_t *dst, uint32_t *dst_remain_len,
 
 #define zalloc(size)			\
 ({					\
-	void *ptr = malloc(size);	\
+	void *ptr = md_malloc(size);	\
 	if (ptr)			\
 		memset(ptr, 0, size);	\
 	else				\
@@ -153,7 +154,7 @@ struct signalfd_siginfo {
 	unsigned long long ull_val;     		\
 	ull_val = strtoull(str, &ptr, 0);       	\
 	val = (typeof(val)) ull_val;    		\
-	if (ull_val == ULONG_MAX || ptr == str)		\
+	if (ull_val == ULLONG_MAX || ptr == str)	\
 		ret = EINVAL;   			\
 	else if (val != ull_val)			\
 		ret = ERANGE;   			\

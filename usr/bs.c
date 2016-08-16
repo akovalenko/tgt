@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -40,6 +41,7 @@
 #include <linux/types.h>
 #include <unistd.h>
 
+#include "memdebug.h"
 #include "list.h"
 #include "tgtd.h"
 #include "tgtadm_error.h"
@@ -277,8 +279,8 @@ static int bs_init_signalfd(void)
 				continue;
 			}
 
-			ret = asprintf(&soname, "%s/%s", BSDIR,
-					dirent->d_name);
+			ret = md_asprintf(&soname, "%s/%s", BSDIR,
+					  dirent->d_name);
 			if (ret == -1) {
 				eprintf("out of memory\n");
 				continue;
@@ -288,7 +290,7 @@ static int bs_init_signalfd(void)
 				eprintf("failed to dlopen backing-store "
 					"module %s error %s \n",
 					soname, dlerror());
-				free(soname);
+				md_free(soname);
 				continue;
 			}
 			register_bs_module = dlsym(handle, "register_bs_module");
@@ -296,11 +298,11 @@ static int bs_init_signalfd(void)
 				eprintf("could not find register_bs_module "
 					"symbol in module %s\n",
 					soname);
-				free(soname);
+				md_free(soname);
 				continue;
 			}
 			register_bs_module();
-			free(soname);
+			md_free(soname);
 		}
 		closedir(dir);
 	}
@@ -440,7 +442,7 @@ destroy_threads:
 
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
-	free(info->worker_thread);
+	md_free(info->worker_thread);
 
 	return TGTADM_NOMEM;
 }
@@ -456,7 +458,7 @@ void bs_thread_close(struct bs_thread_info *info)
 
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
-	free(info->worker_thread);
+	md_free(info->worker_thread);
 }
 
 int bs_thread_cmd_submit(struct scsi_cmd *cmd)

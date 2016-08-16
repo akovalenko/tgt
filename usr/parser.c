@@ -10,6 +10,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 
 #include "parser.h"
@@ -131,7 +132,7 @@ static int match_number(substring_t *s, int *result, int base)
 	char *buf;
 	int ret;
 
-	buf = malloc(s->to - s->from + 1);
+	buf = md_malloc(s->to - s->from + 1);
 	if (!buf)
 		return -ENOMEM;
 	memcpy(buf, s->from, s->to - s->from);
@@ -140,7 +141,7 @@ static int match_number(substring_t *s, int *result, int base)
 	ret = 0;
 	if (endp == buf)
 		ret = -EINVAL;
-	free(buf);
+	md_free(buf);
 	return ret;
 }
 
@@ -212,7 +213,7 @@ char *match_strncpy(char *to, substring_t *s, size_t n)
 char *match_strdup(substring_t *s)
 {
 	size_t n = s->to - s->from + 1;
-	char *p = malloc(n);
+	char *p = md_malloc(n);
 	if (p)
 		match_strncpy(p, s, n);
 

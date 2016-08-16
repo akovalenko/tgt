@@ -23,6 +23,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -1233,7 +1234,7 @@ static void __unregister(struct scsi_cmd *cmd, struct registration *reg)
 	list_del(&reg->registration_siblings);
 	/* cleanup slot */
 	//prstore_delete(reg->slot, cmd);
-	free(reg);
+	md_free(reg);
 }
 
 static void __unregister_and_clean(struct scsi_cmd *cmd,
@@ -1249,12 +1250,12 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 
 	holder = cmd->dev->pr_holder;
 	if (!holder) {
-		free(reg);
+		md_free(reg);
 		return;
 	}
 
 	if (!is_pr_holder(cmd->dev, reg)) {
-		free(reg);
+		md_free(reg);
 		return;
 	}
 
@@ -1297,7 +1298,7 @@ static void __unregister_and_clean(struct scsi_cmd *cmd,
 		}
 	}
 
-	free(reg);
+	md_free(reg);
 }
 
 static int check_pr_out_basic_parameter(struct scsi_cmd *cmd)
@@ -1574,7 +1575,7 @@ static int spc_pr_clear(int host_no, struct scsi_cmd *cmd)
 			ua_sense_add_it_nexus(sibling->nexus_id,
 				cmd->dev, ASC_RESERVATIONS_PREEMPTED);
 		list_del(&sibling->registration_siblings);
-		free(sibling);
+		md_free(sibling);
 	}
 
 	cmd->dev->prgeneration++;
@@ -1883,7 +1884,7 @@ tgtadm_err add_mode_page(struct scsi_lu *lu, char *p)
 			pg = find_mode_page(lu, pcode, subpcode);
 			if (pg) {
 				list_del(&pg->mode_pg_siblings);
-				free(pg);
+				md_free(pg);
 			}
 
 			pg = alloc_mode_pg(pcode, subpcode, size);
@@ -2192,7 +2193,7 @@ void spc_lu_exit(struct scsi_lu *lu)
 
 	for (i = 0; i < ARRAY_SIZE(lu->attrs.lu_vpd); i++)
 		if (lu_vpd[i])
-			free(lu_vpd[i]);
+			md_free(lu_vpd[i]);
 
 	while (!list_empty(&lu->mode_pages)) {
 		struct mode_pg *pg;
@@ -2200,7 +2201,7 @@ void spc_lu_exit(struct scsi_lu *lu)
 				       struct mode_pg,
 				       mode_pg_siblings);
 		list_del(&pg->mode_pg_siblings);
-		free(pg);
+		md_free(pg);
 	}
 
 	prstore_close(lu);

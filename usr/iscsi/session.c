@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 
@@ -30,7 +31,7 @@
 #include "tgtd.h"
 #include "util.h"
 
-static LIST_HEAD(sessions_list);
+LIST_HEAD(sessions_list);
 
 struct iscsi_session *session_find_name(int tid, const char *iname, uint8_t *isid)
 {
@@ -89,25 +90,26 @@ int session_create(struct iscsi_connection *conn)
 	if (!session)
 		return -ENOMEM;
 
-	session->initiator = strdup(conn->initiator);
+	session->initiator = md_strdup(conn->initiator);
 	if (!session->initiator) {
-		free(session);
+		md_free(session);
 		return -ENOMEM;
 	}
 
 	if (conn->initiator_alias) {
-		session->initiator_alias = strdup(conn->initiator_alias);
+		session->initiator_alias = md_strdup(conn->initiator_alias);
 		if (!session->initiator_alias) {
-			free(session);
+			md_free(session->initiator);
+			md_free(session);
 			return -ENOMEM;
 		}
 	}
 
 	session->info = zalloc(1024);
 	if (!session->info) {
-		free(session->initiator);
-		free(session->initiator_alias);
-		free(session);
+		md_free(session->initiator);
+		md_free(session->initiator_alias);
+		md_free(session);
 		return -ENOMEM;
 	}
 
@@ -122,10 +124,10 @@ int session_create(struct iscsi_connection *conn)
 
 	err = it_nexus_create(target->tid, tsih, 0, session->info);
 	if (err) {
-		free(session->initiator);
-		free(session->initiator_alias);
-		free(session->info);
-		free(session);
+		md_free(session->initiator);
+		md_free(session->initiator_alias);
+		md_free(session->info);
+		md_free(session);
 		return err;
 	}
 
@@ -173,10 +175,10 @@ static void session_destroy(struct iscsi_session *session)
 
 	list_del(&session->hlist);
 
-	free(session->initiator);
-	free(session->initiator_alias);
-	free(session->info);
-	free(session);
+	md_free(session->initiator);
+	md_free(session->initiator_alias);
+	md_free(session->info);
+	md_free(session);
 }
 
 void session_get(struct iscsi_session *session)

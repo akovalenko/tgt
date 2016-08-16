@@ -29,6 +29,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "memdebug.h"
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
@@ -179,7 +180,7 @@ void text_key_add(struct iscsi_connection *conn, char *key, char *value)
 		goto drop;
 
 	if (conn->rsp.datasize + len > conn->rsp_buffer_size) {
-		buffer = realloc(buffer, conn->rsp.datasize + len);
+		buffer = md_realloc(buffer, conn->rsp.datasize + len);
 		if (buffer) {
 			conn->rsp_buffer = buffer;
 			conn->rsp.data = conn->rsp_buffer;
@@ -456,11 +457,11 @@ static void login_start(struct iscsi_connection *conn)
 		conn->state = STATE_EXIT;
 		return;
 	}
-	conn->initiator = strdup(name);
+	conn->initiator = md_strdup(name);
 
 	alias = text_key_find(conn, "InitiatorAlias");
 	if (alias)
-		conn->initiator_alias = strdup(alias);
+		conn->initiator_alias = md_strdup(alias);
 
 	session_type = text_key_find(conn, "SessionType");
 	target_name = text_key_find(conn, "TargetName");
@@ -1227,6 +1228,9 @@ void iscsi_free_task(struct iscsi_task *task)
 
 	list_del(&task->c_siblings);
 
+	if (task_opcode(task) == ISCSI_OP_SCSI_CMD)
+		list_del(&task->c_hlist);
+
 	conn->tp->free_data_buf(conn, scsi_get_in_buffer(&task->scmd));
 	conn->tp->free_data_buf(conn, scsi_get_out_buffer(&task->scmd));
 
@@ -1251,7 +1255,6 @@ void iscsi_free_cmd_task(struct iscsi_task *task)
 {
 	target_cmd_done(&task->scmd);
 
-	list_del(&task->c_hlist);
 	iscsi_free_task(task);
 }
 
@@ -2506,12 +2509,12 @@ int iscsi_param_parse_portals(char *p, int do_add,
 				memcpy(tmp, addr, len);
 				if (do_add && iscsi_add_portal(tmp,
 							port, 1)) {
-					free(tmp);
+					md_free(tmp);
 					return -1;
 				}
 				if (do_delete && iscsi_delete_portal(tmp,
 							port)) {
-					free(tmp);
+					md_free(tmp);
 					return -1;
 				}
 			}
