@@ -286,11 +286,15 @@ struct sheepdog_access_info {
 	struct list_head fd_list_head;
 	pthread_rwlock_t fd_list_lock;
 
-	uint32_t min_dirty_data_idx;
-	uint32_t max_dirty_data_idx;
-
 	struct sheepdog_inode inode;
 	pthread_rwlock_t inode_lock;
+
+	pthread_mutex_t inode_version_mutex;
+	uint64_t inode_version;
+
+	struct list_head inflight_list_head;
+	pthread_mutex_t inflight_list_mutex;
+	pthread_cond_t inflight_list_cond;
 };
 
 static inline int is_data_obj_writeable(struct sheepdog_inode *inode,
@@ -656,37 +660,83 @@ static int read_object(struct sheepdog_access_info *ai, char *buf, uint64_t oid,
 
 static int reload_inode(struct sheepdog_access_info *ai, int is_snapshot)
 {
-	int ret, need_reload = 0;
+	int ret = 0, need_reload = 0;
 	char tag[SD_MAX_VDI_TAG_LEN];
 	uint32_t vid;
+
+	static __thread uint64_t inode_version;
+
+	pthread_mutex_lock(&ai->inode_version_mutex);
+
+	if (inode_version != ai->inode_version) {
+		/* some other threads reloaded inode */
+		inode_version = ai->inode_version;
+		goto ret;
+	}
 
 	if (is_snapshot) {
 		memset(tag, 0, sizeof(tag));
 
 		ret = find_vdi_name(ai, ai->inode.name, CURRENT_VDI_ID, tag,
 				    &vid, 0);
-		if (ret)
-			return -1;
+		if (ret) {
+			ret = -1;
+			goto ret;
+		}
 
 		ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(vid),
 				  ai->inode.nr_copies,
 				  offsetof(struct sheepdog_inode, data_vdi_id),
 				  0, &need_reload);
-		if (ret)
-			return -1;
+		if (ret) {
+			ret = -1;
+			goto ret;
+		}
 	} else {
 		ret = read_object(ai, (char *)&ai->inode,
 				  vid_to_vdi_oid(ai->inode.vdi_id),
 				  ai->inode.nr_copies, SD_INODE_SIZE, 0,
 				  &need_reload);
-		if (ret)
-			return -1;
+		if (ret) {
+			ret = -1;
+			goto ret;
+		}
+
+		if (!!ai->inode.snap_ctime) {
+			/*
+			 * This is a case like below:
+			 * take snapshot -> write something -> failover
+			 *
+			 * Because invalidated inode is readonly and latest
+			 * working VDI can have COWed objects, we need to
+			 * resolve VID and reload its entire inode object.
+			 */
+			memset(tag, 0, sizeof(tag));
+
+			ret = find_vdi_name(ai, ai->inode.name, CURRENT_VDI_ID,
+					    tag, &vid, 0);
+			if (ret) {
+				ret = -1;
+				goto ret;
+			}
+
+			ret = read_object(ai, (char *)&ai->inode,
+					  vid_to_vdi_oid(vid),
+					  ai->inode.nr_copies, SD_INODE_SIZE, 0,
+					  &need_reload);
+			if (ret) {
+				ret = -1;
+				goto ret;
+			}
+		}
 	}
 
-	ai->min_dirty_data_idx = UINT32_MAX;
-	ai->max_dirty_data_idx = 0;
+	inode_version++;
+	ai->inode_version = inode_version;
 
-	return 0;
+ret:
+	pthread_mutex_unlock(&ai->inode_version_mutex);
+	return ret;
 }
 
 static int read_write_object(struct sheepdog_access_info *ai, char *buf,
@@ -700,6 +750,7 @@ static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 	unsigned int wlen, rlen;
 	int ret;
 
+retry:
 	memset(&hdr, 0, sizeof(hdr));
 
 	hdr.proto_ver = SD_PROTO_VER;
@@ -741,6 +792,17 @@ static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 	case SD_RES_READONLY:
 		*need_reload = 1;
 		return 0;
+	case SD_RES_NO_OBJ:
+		if (!write && oid & (UINT64_C(1) << 63))
+			/*
+			 * sheepdog doesn't provide a mechanism of metadata
+			 * transaction, so tgt can see an inconsistent state
+			 * like this (old working VDI became snapshot already
+			 * but an inode object of new working VDI isn't
+			 * created yet).
+			 */
+			goto retry;
+		return -1;
 	default:
 		eprintf("%s (oid: %" PRIx64 ", old_oid: %" PRIx64 ")\n",
 			sd_strerror(rsp->result), oid, old_oid);
@@ -798,14 +860,11 @@ static int sd_sync(struct sheepdog_access_info *ai)
 	}
 }
 
-static int update_inode(struct sheepdog_access_info *ai)
+static int update_inode(struct sheepdog_access_info *ai, uint32_t min, uint32_t max)
 {
 	int ret = 0, need_reload_inode = 0;
 	uint64_t oid = vid_to_vdi_oid(ai->inode.vdi_id);
-	uint32_t min, max, offset, data_len;
-
-	min = ai->min_dirty_data_idx;
-	max = ai->max_dirty_data_idx;
+	uint32_t offset, data_len;
 
 	if (max < min)
 		goto end;
@@ -834,8 +893,6 @@ update:
 	}
 
 end:
-	ai->min_dirty_data_idx = UINT32_MAX;
-	ai->max_dirty_data_idx = 0;
 
 	return ret;
 }
@@ -877,6 +934,8 @@ static int sd_io(struct sheepdog_access_info *ai, int write, char *buf, int len,
 	int need_update_inode = 0, need_reload_inode;
 	int nr_copies = ai->inode.nr_copies;
 	int need_write_lock, check_idx;
+	int read_reload_snap = 0;
+	uint32_t min_dirty_data_idx = UINT32_MAX, max_dirty_data_idx = 0;
 
 	goto do_req;
 
@@ -884,7 +943,7 @@ reload_in_read_path:
 	pthread_rwlock_unlock(&ai->inode_lock); /* unlock current read lock */
 
 	pthread_rwlock_wrlock(&ai->inode_lock);
-	ret = reload_inode(ai, 0);
+	ret = reload_inode(ai, read_reload_snap);
 	if (ret) {
 		eprintf("failed to reload in read path\n");
 		goto out;
@@ -958,12 +1017,12 @@ retry:
 				}
 
 				if (create) {
-					ai->min_dirty_data_idx =
+					min_dirty_data_idx =
 						min_t(uint32_t, idx,
-						      ai->min_dirty_data_idx);
-					ai->max_dirty_data_idx =
+						      min_dirty_data_idx);
+					max_dirty_data_idx =
 						max_t(uint32_t, idx,
-						      ai->max_dirty_data_idx);
+						      max_dirty_data_idx);
 					ai->inode.data_vdi_id[idx] = vid;
 
 					need_update_inode = 1;
@@ -980,6 +1039,8 @@ retry:
 					dprintf("reload in read path for not"\
 						" written area\n");
 					size = orig_size;
+					read_reload_snap =
+						need_reload_inode == 1;
 					goto reload_in_read_path;
 				}
 			}
@@ -991,6 +1052,7 @@ retry:
 			if (need_reload_inode) {
 				dprintf("reload in ordinal read path\n");
 				size = orig_size;
+				read_reload_snap = need_reload_inode == 1;
 				goto reload_in_read_path;
 			}
 		}
@@ -1006,7 +1068,7 @@ done:
 	}
 
 	if (need_update_inode)
-		ret = update_inode(ai);
+		ret = update_inode(ai, min_dirty_data_idx, max_dirty_data_idx);
 
 out:
 	pthread_rwlock_unlock(&ai->inode_lock);
@@ -1219,15 +1281,17 @@ trans_to_expect_nothing:
 	if (ret)
 		goto out;
 
-	ai->min_dirty_data_idx = UINT32_MAX;
-	ai->max_dirty_data_idx = 0;
-
 	ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(vid),
 			  0, SD_INODE_SIZE, 0, &need_reload);
 	if (ret)
 		goto out;
 
 	ret = 0;
+
+	INIT_LIST_HEAD(&ai->inflight_list_head);
+	pthread_mutex_init(&ai->inflight_list_mutex, NULL);
+	pthread_cond_init(&ai->inflight_list_cond, NULL);
+
 out:
 	strcpy(filename, orig_filename);
 	free(orig_filename);
@@ -1325,6 +1389,41 @@ out:
 	return ret;
 }
 
+struct inflight_thread {
+	unsigned long min_idx, max_idx;
+	struct list_head list;
+};
+
+static void inflight_block(struct sheepdog_access_info *ai,
+			   struct inflight_thread *myself)
+{
+	struct inflight_thread *inflight;
+
+	pthread_mutex_lock(&ai->inflight_list_mutex);
+
+retry:
+	list_for_each_entry(inflight, &ai->inflight_list_head, list) {
+		if (!(myself->max_idx < inflight->min_idx ||
+		      inflight->max_idx < myself->min_idx)) {
+			pthread_cond_wait(&ai->inflight_list_cond,
+					  &ai->inflight_list_mutex);
+			goto retry;
+		}
+	}
+
+	list_add_tail(&myself->list, &ai->inflight_list_head);
+	pthread_mutex_unlock(&ai->inflight_list_mutex);
+}
+ void inflight_release(struct sheepdog_access_info *ai,
+			     struct inflight_thread *myself)
+{
+	pthread_mutex_lock(&ai->inflight_list_mutex);
+	list_del(&myself->list);
+	pthread_mutex_unlock(&ai->inflight_list_mutex);
+
+	pthread_cond_signal(&ai->inflight_list_cond);
+}
+
 static void bs_sheepdog_request(struct scsi_cmd *cmd)
 {
 	int ret = 0;
@@ -1335,6 +1434,13 @@ static void bs_sheepdog_request(struct scsi_cmd *cmd)
 	struct bs_thread_info *info = BS_THREAD_I(cmd->dev);
 	struct sheepdog_access_info *ai =
 		(struct sheepdog_access_info *)(info + 1);
+
+	uint32_t object_size = (UINT32_C(1) << ai->inode.block_size_shift);
+	struct inflight_thread myself;
+	int inflight = 0;
+
+	memset(&myself, 0, sizeof(myself));
+	INIT_LIST_HEAD(&myself.list);
 
 	switch (cmd->scb[0]) {
 	case SYNCHRONIZE_CACHE:
@@ -1359,6 +1465,13 @@ static void bs_sheepdog_request(struct scsi_cmd *cmd)
 		}
 
 		length = scsi_get_out_length(cmd);
+
+		myself.min_idx = cmd->offset / object_size;
+		myself.max_idx = (cmd->offset + length + (object_size - 1))
+			/ object_size;
+		inflight_block(ai, &myself);
+		inflight = 1;
+
 		ret = sd_io(ai, 1, scsi_get_out_buffer(cmd),
 			    length, cmd->offset);
 
@@ -1370,6 +1483,13 @@ static void bs_sheepdog_request(struct scsi_cmd *cmd)
 	case READ_12:
 	case READ_16:
 		length = scsi_get_in_length(cmd);
+
+		myself.min_idx = cmd->offset / object_size;
+		myself.max_idx = (cmd->offset + length + (object_size - 1))
+			/ object_size;
+		inflight_block(ai, &myself);
+		inflight = 1;
+
 		ret = sd_io(ai, 0, scsi_get_in_buffer(cmd),
 			    length, cmd->offset);
 		if (ret)
@@ -1389,6 +1509,9 @@ static void bs_sheepdog_request(struct scsi_cmd *cmd)
 			cmd, cmd->scb[0], ret, length, cmd->offset);
 		sense_data_build(cmd, key, asc);
 	}
+
+	if (inflight)
+		inflight_release(ai, &myself);
 }
 
 static int bs_sheepdog_open(struct scsi_lu *lu, char *path,
@@ -1426,6 +1549,7 @@ static tgtadm_err bs_sheepdog_init(struct scsi_lu *lu, char *bsopts)
 	INIT_LIST_HEAD(&ai->fd_list_head);
 	pthread_rwlock_init(&ai->fd_list_lock, NULL);
 	pthread_rwlock_init(&ai->inode_lock, NULL);
+	pthread_mutex_init(&ai->inode_version_mutex, NULL);
 
 	return bs_thread_open(info, bs_sheepdog_request, nr_iothreads);
 }
